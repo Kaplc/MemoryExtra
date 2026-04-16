@@ -25,6 +25,18 @@ snapshots/
 # 忽略配置文件
 qdrant/config/
 
+# 忽略日志
+logs/
+
+# 忽略 SQLite 数据库
+backend/stats.db
+
+# Node.js / Playwright
+node_modules/
+package-lock.json
+playwright-report/
+test-results/
+
 # Claude
 .claude/scheduled_tasks.json
 models.zip

@@ -1,6 +1,5 @@
-/* 路由 + 共享工具 */
+/* 路由 + 页面加载 + 状态栏 */
 
-const API = 'http://127.0.0.1:18765';
 let currentPage = null;
 const pageCache = {};
 
@@ -39,7 +38,6 @@ window.onunhandledrejection = (e) => {
 let _currentScript = null;
 
 async function loadPage(page, force = false) {
-  // 切换页面时清理上一个页面的资源
   if (typeof cleanup === 'function') cleanup();
   if (currentPage === page && !force) return;
 
@@ -56,40 +54,20 @@ async function loadPage(page, force = false) {
 
   content.innerHTML = pageCache[page];
 
-  // 移除旧脚本避免变量重复声明
-  if (_currentScript) {
-    _currentScript.remove();
-    _currentScript = null;
-  }
+  if (_currentScript) { _currentScript.remove(); _currentScript = null; }
 
-  // 加载页面 JS
   const script = document.createElement('script');
   script.src = `modules/${page}/${page}.js?_t=${Date.now()}`;
-  script.onload = () => {
-    if (typeof onPageLoad === 'function') onPageLoad();
-  };
+  script.onload = () => { if (typeof onPageLoad === 'function') onPageLoad(); };
   document.body.appendChild(script);
   _currentScript = script;
 
-  // 更新导航
   document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
   document.querySelector(`.nav-item[data-page="${page}"]`).classList.add('active');
   currentPage = page;
 }
 
-// ── Toast ─────────────────────────────────────────────────
-document.body.insertAdjacentHTML('beforeend', `<div class="toast" id="toast"></div>`);
-
-function toast(msg, type='success') {
-  const el = document.getElementById('toast');
-  if (!el) return;
-  el.textContent = msg;
-  el.className = 'toast show ' + type;
-  clearTimeout(el._t);
-  el._t = setTimeout(() => el.className = 'toast', 2800);
-}
-
-// ── 共享状态 ──────────────────────────────────────────────
+// ── 共享状态 UI 更新 ───────────────────────────────────────
 function updateStatusUI(d) {
   const dotEl = document.getElementById('statusDot');
   if (dotEl) dotEl.className = 'status-dot' + (d.model_loaded ? ' ready' : '');
@@ -110,26 +88,38 @@ function updateStatusUI(d) {
     const map = {cuda: 'GPU', cpu: 'CPU'};
     sbDevice.textContent = map[d.device] || d.device || 'CPU';
   }
+
+  // DB 状态
+  fetch(API + '/db-status').then(r => r.json()).then(d => {
+    const dbDot = document.getElementById('sbDbDot');
+    const dbText = document.getElementById('sbDbText');
+    if (dbDot && dbText) {
+      if (d.ok) {
+        dbDot.className = 'statusbar-dot ok';
+        dbText.textContent = `DB ${d.records}条`;
+      } else {
+        dbDot.className = 'statusbar-dot err';
+        dbText.textContent = 'DB ERR';
+      }
+    }
+  }).catch(() => {});
 }
 
-// ── 状态检查 ──────────────────────────────────────────────
+// ── 状态检查轮询 ────────────────────────────────────────────
 let _lastModelLoaded = false;
 
 async function checkStatus(retries = 3) {
   try {
     const d = await fetch(API + '/status').then(r => r.json());
     updateStatusUI(d);
-    // 模型从 false 变成 true 时，强制刷新 overview 页面
     if (!_lastModelLoaded && d.model_loaded && currentPage === 'overview') {
       loadPage('overview', true);
     }
     _lastModelLoaded = d.model_loaded;
     if (!d.model_loaded) setTimeout(checkStatus, 3000);
   } catch {
-    if (retries > 0) {
-      setTimeout(() => checkStatus(retries - 1), 1000);
-      return;
-    }
+    if (retries > 0) { setTimeout(() => checkStatus(retries - 1), 1000); return; }
+
     const dotEl = document.getElementById('statusDot');
     if (dotEl) dotEl.className = 'status-dot';
     const sbDot = document.getElementById('sbModelDot');

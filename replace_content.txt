@@ -1,0 +1,3 @@
+container.innerHTML = labels.join('');
+  const labelCount = labels.length;
+  container.style.setProperty('--label-count', labelCount);

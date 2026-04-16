@@ -1,9 +1,12 @@
-/* 总览页面 */
+﻿/* 总览页面 */
 var _overviewTimer = null;
+var _sysInfoTimer = null;
+var _currentChartRange = 'today';
+var _resizeTimer = null;
 
 function onPageLoad() {
   loadOverviewPage();
-  // 每 3 秒刷新一次状态，直到模型就绪
+  // 模型加载轮询（3秒）
   if (_overviewTimer) clearInterval(_overviewTimer);
   _overviewTimer = setInterval(async () => {
     try {
@@ -11,38 +14,79 @@ function onPageLoad() {
       const modelValue = document.getElementById('scModelValue');
       const modelSub = document.getElementById('scModelSub');
       if (st.model_loaded) {
-        if (modelValue) modelValue.innerHTML = `<span class="mini-loading"></span>`;
+        if (modelValue) modelValue.innerHTML = '';
         if (modelSub) {
           const name = st.embedding_model || 'bge-m3';
           const size = st.model_size || '';
-          modelSub.innerHTML = `<span class="sc-badge green">OK</span> ${name} ${size}`;
+          modelSub.innerHTML = `${name} ${size}`;
         }
         if (_overviewTimer) { clearInterval(_overviewTimer); _overviewTimer = null; }
       }
     } catch {}
   }, 3000);
+
+  // 系统信息轮询（1秒）
+  if (_sysInfoTimer) clearInterval(_sysInfoTimer);
+  _sysInfoTimer = setInterval(async () => {
+    try {
+      const sysInfo = await fetchJson(API + '/system-info');
+      updateDeviceCard(sysInfo);
+    } catch {}
+  }, 1000);
+
+  // 图表 tab 切换
+  const tabsEl = document.getElementById('chartTabs');
+  if (tabsEl) {
+    tabsEl.addEventListener('click', async (e) => {
+      const btn = e.target.closest('.chart-tab');
+      if (!btn) return;
+      const range = btn.dataset.range;
+      if (!range || range === _currentChartRange) return;
+      _currentChartRange = range;
+      tabsEl.querySelectorAll('.chart-tab').forEach(t => t.classList.remove('active'));
+      btn.classList.add('active');
+      await fetchAndDrawChart(range);
+    });
+  }
 }
 
 function cleanup() {
   if (_overviewTimer) { clearInterval(_overviewTimer); _overviewTimer = null; }
+  if (_sysInfoTimer) { clearInterval(_sysInfoTimer); _sysInfoTimer = null; }
+  if (_resizeTimer) { clearTimeout(_resizeTimer); _resizeTimer = null; }
 }
 
-async function fetchJson(url, retries = 3) {
-  for (let i = 0; i < retries; i++) {
-    try {
-      const r = await fetch(url);
-      if (!r.ok && r.status >= 500 && i < retries - 1) {
-        await new Promise(res => setTimeout(res, 500));
-        continue;
-      }
-      return await r.json();
-    } catch(e) {
-      if (i < retries - 1) {
-        await new Promise(res => setTimeout(res, 500));
-        continue;
-      }
-      throw e;
-    }
+function updateDeviceCard(sysInfo) {
+  const devSub1 = document.getElementById('scDeviceSub1');
+  const devSub2 = document.getElementById('scDeviceSub2');
+  const devSub3 = document.getElementById('scDeviceSub3');
+  const devSub4 = document.getElementById('scDeviceSub4');
+  const devSub5 = document.getElementById('scDeviceSub5');
+  const devSub6 = document.getElementById('scDeviceSub6');
+  if (!devSub1 || !sysInfo) return;
+
+  // 1. 系统信息
+  const plat = (sysInfo.platform || '').substring(0, 50);
+  if (devSub1) devSub1.textContent = plat;
+
+  // 2. CPU
+  if (devSub2) devSub2.textContent = `CPU ${(sysInfo.cpu_percent||0).toFixed(0)}%`;
+
+  // 3. 内存大小
+  const sysMemTotal = sysInfo.memory_total / (1024**3);
+  const sysMemUsed = sysInfo.memory_used / (1024**3);
+  if (devSub3) devSub3.textContent = `内存 ${sysMemUsed.toFixed(1)}/${sysMemTotal.toFixed(1)}GB ${sysInfo.memory_percent.toFixed(0)}%`;
+
+  // 4-6. GPU
+  if (sysInfo.gpu) {
+    const g = sysInfo.gpu;
+    const gpuMemTotal = g.memory_total / (1024**3);
+    const gpuMemUsed = g.memory_used / (1024**3);
+    if (devSub4) devSub4.textContent = `GPU ${g.name}`;
+    if (devSub5) devSub5.textContent = `显存 ${gpuMemUsed.toFixed(1)}/${gpuMemTotal.toFixed(1)}GB ${g.memory_percent}%`;
+    if (devSub6) devSub6.textContent = g.temperature != null ? `GPU温度 ${g.temperature}°C` : '';
+  } else {
+    [devSub4, devSub5, devSub6].forEach(el => { if (el) el.textContent = ''; });
   }
 }
 
@@ -53,112 +97,160 @@ async function loadOverviewPage() {
       fetchJson(API + '/status'),
       fetchJson(API + '/system-info'),
     ]);
-    console.log('[overview] cfg:', cfg);
-    console.log('[overview] st:', st);
-    console.log('[overview] sysInfo:', sysInfo);
-    const r = await fetch(API + '/list', {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: '{}'
-    }).then(r => r.json());
-    console.log('[overview] memories count:', (r.memories || []).length);
 
-    // Model status (centered loading, info below)
+    // Model status
     const modelValue = document.getElementById('scModelValue');
     const modelSub = document.getElementById('scModelSub');
+    const modelBadge = document.getElementById('scModelBadge');
     if (st.model_loaded) {
       if (modelValue) modelValue.innerHTML = '';
+      if (modelBadge) { modelBadge.textContent = 'OK'; modelBadge.className = 'sc-badge green'; }
       if (modelSub) {
         const name = st.embedding_model || 'bge-m3';
         const size = st.model_size || '';
-        modelSub.innerHTML = `<span class="sc-badge green">OK</span> ${name} ${size}`;
+        modelSub.innerHTML = `${name} ${size}`;
       }
     } else {
-      if (modelValue) modelValue.innerHTML = `<span class="mini-loading"></span>`;
-      if (modelSub) modelSub.innerHTML = `<span class="sc-badge yellow">加载中</span>`;
+      if (modelValue) modelValue.innerHTML = '';
+      if (modelBadge) { modelBadge.textContent = ''; modelBadge.className = 'sc-badge'; }
+      if (modelSub) modelSub.innerHTML = '<div style="text-align:center"><span class="mini-loading"></span><div style="font-size:11px;color:#64748b;margin-top:4px"><span class="sc-badge yellow">加载中</span></div></div>';
     }
 
-    // Qdrant status + dim (badge in label)
+    // Qdrant
     const qBadge = document.getElementById('scQdrantBadge');
-    const qDimSub = document.getElementById('scDimSub');
     if (qBadge) {
-      if (st.qdrant_ready) {
-        qBadge.textContent = 'OK';
-        qBadge.className = 'sc-badge green';
-      } else {
-        qBadge.textContent = 'ERR';
-        qBadge.className = 'sc-badge red';
-      }
+      if (st.qdrant_ready) { qBadge.textContent = 'OK'; qBadge.className = 'sc-badge green'; }
+      else { qBadge.textContent = 'ERR'; qBadge.className = 'sc-badge red'; }
     }
-    if (qDimSub) {
-      qDimSub.textContent = `向量维度 ${st.embedding_dim || 1024}`;
-    }
+    const qHostSub = document.getElementById('scQdrantHostSub');
+    const qPortSub = document.getElementById('scQdrantPortSub');
+    const qCollectionSub = document.getElementById('scQdrantCollectionSub');
+    const qTopKSub = document.getElementById('scQdrantTopKSub');
+    if (qHostSub) qHostSub.textContent = `Host: ${st.qdrant_host || 'localhost'}`;
+    if (qPortSub) qPortSub.textContent = `Port: ${st.qdrant_port || 6333}`;
+    if (qCollectionSub) qCollectionSub.textContent = `Collection: ${st.qdrant_collection || 'memories'}`;
+    if (qTopKSub) qTopKSub.textContent = `Top-K: ${st.qdrant_top_k || 5}`;
 
-    // Device status with system/GPU info (vertical layout)
+    // Device info
     const devSub1 = document.getElementById('scDeviceSub1');
     const devSub2 = document.getElementById('scDeviceSub2');
     const devSub3 = document.getElementById('scDeviceSub3');
     const devSub4 = document.getElementById('scDeviceSub4');
     const devSub5 = document.getElementById('scDeviceSub5');
-    // 系统信息
+    const devSub6 = document.getElementById('scDeviceSub6');
+
+    // 1. 系统信息
+    const plat = (sysInfo.platform || '').substring(0, 50);
+    if (devSub1) devSub1.textContent = plat;
+
+    // 2. CPU
+    const cpuPct = sysInfo.cpu_percent;
+    if (devSub2) devSub2.textContent = `CPU ${(sysInfo.cpu_percent||0).toFixed(0)}%`;
+
+    // 3. 内存大小
     const sysMemTotal = sysInfo.memory_total / (1024**3);
     const sysMemUsed = sysInfo.memory_used / (1024**3);
-    const sysMemPct = sysInfo.memory_percent;
-    const cpuPct = sysInfo.cpu_percent;
-    if (devSub1) devSub1.textContent = `系统 ${sysMemUsed.toFixed(1)}/${sysMemTotal.toFixed(1)}GB ${sysMemPct.toFixed(0)}%`;
-    if (devSub2) devSub2.textContent = `CPU ${cpuPct.toFixed(0)}%`;
-    // GPU信息
+    if (devSub3) devSub3.textContent = `内存 ${sysMemUsed.toFixed(1)}/${sysMemTotal.toFixed(1)}GB ${sysInfo.memory_percent.toFixed(0)}%`;
+
+    // 4-6. GPU
     if (sysInfo.gpu) {
       const g = sysInfo.gpu;
       const gpuMemTotal = g.memory_total / (1024**3);
       const gpuMemUsed = g.memory_used / (1024**3);
-      const gpuMemPct = g.memory_percent;
-      if (devSub3) devSub3.textContent = `GPU ${g.name}`;
-      if (devSub4) devSub4.textContent = `显存 ${gpuMemUsed.toFixed(1)}/${gpuMemTotal.toFixed(1)}GB ${gpuMemPct}%`;
-      if (g.temperature !== null && g.temperature !== undefined && devSub5) {
-        devSub5.textContent = `GPU温度 ${g.temperature}°C`;
-      } else if (devSub5) {
-        devSub5.textContent = '';
-      }
+      if (devSub4) devSub4.textContent = `GPU ${g.name}`;
+      if (devSub5) devSub5.textContent = `显存 ${gpuMemUsed.toFixed(1)}/${gpuMemTotal.toFixed(1)}GB ${g.memory_percent}%`;
+      if (devSub6) devSub6.textContent = g.temperature != null ? `GPU温度 ${g.temperature}°C` : '';
     } else {
-      if (devSub3) devSub3.textContent = '';
-      if (devSub4) devSub4.textContent = '';
-      if (devSub5) devSub5.textContent = '';
+      [devSub4, devSub5, devSub6].forEach(el => { if (el) el.textContent = ''; });
     }
 
-    // Stats
-    const memories = r.memories || [];
-    const today = new Date().toISOString().slice(0, 10);
-    const todayCnt = memories.filter(m => (m.timestamp || '').startsWith(today)).length;
+    // Stats & chart
+    await fetchAndDrawChart(_currentChartRange);
 
-    const statTotal = document.getElementById('statTotal');
-    const statToday = document.getElementById('statToday');
-    const statDim = document.getElementById('statDim');
-    console.log('[overview] statTotal:', statTotal, 'statToday:', statToday, 'statDim:', statDim);
-    if (statTotal) statTotal.textContent = memories.length;
-    if (statToday) statToday.textContent = todayCnt;
-    if (statDim) statDim.textContent = st.embedding_dim || 1024;
+    // 记忆总数从数据库获取（启动时已同步 Qdrant）
+    try {
+      const countRes = await fetchJson(API + '/memory-count');
+      const statTotal = document.getElementById('statTotal');
+      if (statTotal) statTotal.textContent = countRes.count || 0;
+    } catch (e) {
+      console.error('[overview] failed to get memory count:', e);
+    }
 
-    // Update chart bars
-    updateChart(memories.length, todayCnt);
   } catch(e) { console.error('[overview] load failed:', e && e.message ? e.message : String(e)); }
 }
 
-function updateChart(total, today) {
-  const chart = document.getElementById('chartBody');
-  if (!chart) return;
-  const bars = chart.querySelectorAll('.bar-wrap');
-  const todayRatio = total > 0 ? today / total : 0;
-  bars.forEach((wrap, i) => {
-    const totalBar = wrap.querySelector('.bar.total');
-    const todayBar = wrap.querySelector('.bar.today');
-    if (totalBar) {
-      const h = Math.min(100, ((i + 1) / 7) * 100 + 5);
-      totalBar.style.height = Math.max(4, h) + '%';
-    }
-    if (todayBar) {
-      const h = i === 6 ? Math.min(100, todayRatio * 100 + 3) : Math.max(4, (i + 1) * 2 + todayRatio * 8);
-      todayBar.style.height = h + '%';
+// ── 图表 ───────────────────────────────────────────────────
+
+function _formatXLabels(data, range) {
+  const container = document.querySelector('.chart-x-labels');
+  if (!container) return;
+  if (!data || data.length === 0) { container.innerHTML = '<span class="chart-x-label">暂无数据</span>'; return; }
+
+  // 获取容器宽度
+  const containerWidth = container.clientWidth;
+  const dataCount = data.length;
+
+  // 根据容器宽度和数据点数量计算合适的显示间隔
+  const minLabelWidth = 40;
+  const maxLabels = Math.max(2, Math.floor(containerWidth / minLabelWidth));
+  const step = Math.max(1, Math.ceil(dataCount / maxLabels));
+
+  // 只生成需要显示的标签，不生成空标签
+  const labels = [];
+  data.forEach((d, index) => {
+    // 根据间隔跳过一些标签，但确保显示第一个和最后一个标签
+    if (index % step === 0 || index === 0 || index === dataCount - 1) {
+      let label;
+      if (range === 'today') {
+        label = d.date;
+      } else {
+        const day = d.date.slice(-2);
+        if (day === '01') {
+          // 1号显示月份，如 "03月"
+          label = d.date.slice(5, 7) + '月';
+        } else {
+          // 其他日期只显示天，如 "25"
+          label = day;
+        }
+      }
+      labels.push('<span class="chart-x-label">' + label + '</span>');
     }
   });
+
+  // 设置标签数量并渲染
+  const labelCount = labels.length;
+  container.style.setProperty('--label-count', labelCount);
+  container.innerHTML = labels.join('');
+}
+
+// 添加窗口大小变化监听
+window.addEventListener('resize', () => {
+  if (_resizeTimer) clearTimeout(_resizeTimer);
+  _resizeTimer = setTimeout(() => {
+    if (_currentChartRange) {
+      // 重新格式化标签
+      const container = document.querySelector('.chart-x-labels');
+      if (container && container.innerHTML !== '') {
+        // 重新获取数据并格式化
+        fetchAndDrawChart(_currentChartRange);
+      }
+    }
+  }, 250);
+});
+
+async function fetchAndDrawChart(range) {
+  try {
+    const res = await fetchJson(API + '/chart-data?range=' + range);
+    const data = res.data || [];
+
+    // 更新今日新增统计
+    const todayEl = document.getElementById('statToday');
+    if (todayEl) {
+      const todayStr = new Date().toISOString().slice(0, 10);
+      todayEl.textContent = (data.find(d => d.date === todayStr)?.added) || 0;
+    }
+
+    drawChartCurve(data, range);
+    _formatXLabels(data, range);
+  } catch(e) { console.error('[overview] chart error:', e); }
 }

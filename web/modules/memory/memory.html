@@ -1,8 +1,18 @@
 <style>
-.memory-layout { display: flex; gap: 20px; padding: 24px; overflow: hidden; flex: 1; min-height: 0; box-sizing: border-box; }
-.memory-sidebar { width: 280px; flex-shrink: 0; display: flex; flex-direction: column; gap: 12px; overflow-y: auto; }
-.memory-list-section { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 12px; overflow: hidden; }
-.memory-list { overflow-y: auto; flex: 1; min-height: 0; }
+/* 主布局：固定高度，禁止滚动 */
+.memory-layout { display: flex; gap: 20px; padding: 24px; overflow: hidden; flex: 1; min-height: 0; box-sizing: border-box; height: 100%; }
+
+/* 侧边栏：固定高度，禁止滚动 */
+.memory-sidebar { width: 280px; flex-shrink: 0; display: flex; flex-direction: column; gap: 12px; overflow: hidden; height: 100%; }
+
+/* 列表区域：固定高度，禁止滚动 */
+.memory-list-section { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 12px; overflow: hidden; min-height: 0; height: 100%; }
+
+/* 列表容器：唯一可滚动区域 */
+.memory-list-container { flex: 1; overflow-y: auto; min-height: 0; position: relative; }
+
+/* 列表内容 */
+.memory-list { display: flex; flex-direction: column; gap: 8px; min-height: 0; }
 .widget { background: #1a1d27; border: 1px solid #2d3149; border-radius: 10px; padding: 14px; display: flex; flex-direction: column; gap: 10px; }
 .widget-title { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .08em; color: #64748b; }
 .stats { background: #0f1117; border: 1px solid #2d3149; border-radius: 8px; padding: 12px; display: flex; justify-content: space-between; }
@@ -21,7 +31,6 @@ textarea:focus, input:focus { border-color: #7c3aed; }
 .tab-bar { display: flex; gap: 4px; background: #1a1d27; border-radius: 8px; padding: 4px; flex-shrink: 0; }
 .tab { flex: 1; padding: 7px; border: none; border-radius: 6px; background: transparent; color: #64748b; font-size: 13px; font-weight: 500; cursor: pointer; transition: all .2s; }
 .tab.active { background: #7c3aed; color: #fff; }
-.memory-list { display: flex; flex-direction: column; gap: 8px; overflow-y: auto; flex: 1; }
 .memory-card { background: #1a1d27; border: 1px solid #2d3149; border-radius: 10px; padding: 14px 16px; display: flex; align-items: flex-start; gap: 12px; transition: border-color .2s; }
 .memory-card:hover { border-color: #7c3aed44; }
 .memory-card.search-result { border-color: #7c3aed66; }
@@ -74,6 +83,8 @@ textarea:focus, input:focus { border-color: #7c3aed; }
       <button class="tab active" id="tabAll" onclick="switchTab('all')">全部记忆</button>
       <button class="tab" id="tabSearch" onclick="switchTab('search')">搜索结果</button>
     </div>
-    <div class="memory-list" id="memoryList"></div>
+    <div class="memory-list-container">
+      <div class="memory-list" id="memoryList"></div>
+    </div>
   </section>
 </div>

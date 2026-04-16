@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>日期标签自适应测试</title>
+    <style>
+        .chart-x-labels {
+            display: flex;
+            justify-content: space-between;
+            padding-top: 6px;
+            width: 100%;
+            overflow: hidden;
+            border: 1px solid #ccc;
+            margin: 10px 0;
+        }
+        .chart-x-label {
+            font-size: 10px;
+            color: #64748b;
+            text-align: center;
+            flex: 1;
+            min-width: 0;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            border-right: 1px solid #eee;
+        }
+        .test-container {
+            width: 100%;
+            max-width: 800px;
+            margin: 20px auto;
+            padding: 20px;
+        }
+        .resize-handle {
+            width: 100%;
+            height: 20px;
+            background: #f0f0f0;
+            cursor: ew-resize;
+            text-align: center;
+            line-height: 20px;
+            font-size: 12px;
+        }
+    </style>
+</head>
+<body>
+    <div class="test-container">
+        <h3>日期标签自适应测试</h3>
+        <p>调整容器宽度查看日期标签的自适应效果：</p>
+
+        <div class="resize-handle">← 拖动调整容器宽度 →</div>
+
+        <div id="chartContainer" style="width: 100%; border: 1px solid #999; padding: 10px;">
+            <div class="chart-x-labels" id="testLabels"></div>
+        </div>
+
+        <div style="margin-top: 20px;">
+            <button onclick="testToday()">测试今天数据</button>
+            <button onclick="testWeek()">测试7天数据</button>
+            <button onclick="testMonth()">测试30天数据</button>
+            <button onclick="testAll()">测试全部数据</button>
+        </div>
+
+        <div style="margin-top: 20px;">
+            <p>当前容器宽度: <span id="widthInfo">0</span>px</p>
+            <p>显示标签数量: <span id="labelCount">0</span></p>
+        </div>
+    </div>
+
+    <script>
+        // 模拟数据
+        const testData = {
+            today: Array.from({length: 24}, (_, i) => ({date: `${i.toString().padStart(2, '0')}:00`})),
+            week: Array.from({length: 7}, (_, i) => {
+                const date = new Date();
+                date.setDate(date.getDate() - 6 + i);
+                return {date: date.toISOString().slice(0, 10)};
+            }),
+            month: Array.from({length: 30}, (_, i) => {
+                const date = new Date();
+                date.setDate(date.getDate() - 29 + i);
+                return {date: date.toISOString().slice(0, 10)};
+            }),
+            all: Array.from({length: 100}, (_, i) => {
+                const date = new Date();
+                date.setDate(date.getDate() - 99 + i);
+                return {date: date.toISOString().slice(0, 10)};
+            })
+        };
+
+        function _formatXLabels(data, range) {
+            const container = document.getElementById('testLabels');
+            if (!container) return;
+            if (!data || data.length === 0) { container.innerHTML = '<span class="chart-x-label">暂无数据</span>'; return; }
+
+            // 获取容器宽度
+            const containerWidth = container.clientWidth;
+            const dataCount = data.length;
+
+            // 根据容器宽度和数据点数量计算合适的显示间隔
+            const minLabelWidth = 40; // 每个标签最小宽度
+            const maxLabels = Math.max(2, Math.floor(containerWidth / minLabelWidth));
+            const step = Math.max(1, Math.ceil(dataCount / maxLabels));
+
+            container.innerHTML = data.map((d, index) => {
+                // 根据间隔跳过一些标签，但确保显示第一个和最后一个标签
+                if (index % step !== 0 && index !== 0 && index !== dataCount - 1) {
+                    return '<span class="chart-x-label"></span>';
+                }
+
+                let label;
+                if (range === 'today') {
+                    // 今天显示小时 (HH:00)
+                    label = d.date;
+                } else {
+                    // 其他显示日期：1号显示月份，其他显示天
+                    const day = d.date.slice(-2);
+                    if (day === '01') {
+                        // 1号显示月份，如 "03月"
+                        label = d.date.slice(5, 7) + '月';
+                    } else {
+                        // 其他日期只显示天，如 "25"
+                        label = day;
+                    }
+                }
+                return `<span class="chart-x-label">${label}</span>`;
+            }).join('');
+
+            // 更新信息
+            document.getElementById('widthInfo').textContent = containerWidth;
+            document.getElementById('labelCount').textContent = container.children.length;
+        }
+
+        function testToday() { _formatXLabels(testData.today, 'today'); }
+        function testWeek() { _formatXLabels(testData.week, 'week'); }
+        function testMonth() { _formatXLabels(testData.month, 'month'); }
+        function testAll() { _formatXLabels(testData.all, 'all'); }
+
+        // 窗口大小变化监听
+        let resizeTimer;
+        window.addEventListener('resize', () => {
+            clearTimeout(resizeTimer);
+            resizeTimer = setTimeout(() => {
+                // 重新测试当前数据
+                if (window.currentTest) window.currentTest();
+            }, 250);
+        });
+
+        // 初始测试
+        testToday();
+        window.currentTest = testToday;
+    </script>
+</body>
+</html>

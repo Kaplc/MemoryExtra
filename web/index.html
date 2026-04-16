@@ -49,9 +49,14 @@ body {
 .statusbar { height: 28px; background: #1a1d27; border-top: 1px solid #2d3149; display: flex; align-items: center; justify-content: flex-end; gap: 16px; padding: 0 16px; font-size: 11px; color: #64748b; flex-shrink: 0; }
 .statusbar-item { display: flex; align-items: center; gap: 5px; }
 .statusbar-dot { width: 6px; height: 6px; border-radius: 50%; }
-.statusbar-dot.ok { background: #22c55e; }
-.statusbar-dot.err { background: #ef4444; }
-.statusbar-dot.loading { background: #eab308; }
+.statusbar-dot.ok { background: #22c55e; box-shadow: 0 0 4px #22c55e; animation: breathe 2s ease-in-out infinite; }
+.statusbar-dot.err { background: #ef4444; box-shadow: 0 0 4px #ef4444; }
+.statusbar-dot.loading { background: #eab308; box-shadow: 0 0 4px #eab308; animation: breathe 1s ease-in-out infinite; }
+
+@keyframes breathe {
+  0%, 100% { opacity: 1; transform: scale(1); box-shadow: 0 0 4px currentColor; }
+  50% { opacity: 0.6; transform: scale(0.85); box-shadow: 0 0 2px currentColor; }
+}
 ::-webkit-scrollbar { width: 4px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: #2d3149; border-radius: 2px; }
@@ -73,6 +78,9 @@ body {
       <button class="nav-item" data-page="memory" onclick="loadPage('memory')">
         <span class="nav-label">记忆</span>
       </button>
+      <button class="nav-item" data-page="steam" onclick="loadPage('steam')">
+        <span class="nav-label">流</span>
+      </button>
       <button class="nav-item" data-page="settings" onclick="loadPage('settings')">
         <span class="nav-label">设置</span>
       </button>
@@ -93,10 +101,15 @@ body {
       <div class="statusbar-item">
         <span id="sbDeviceText">CPU</span>
       </div>
+      <div class="statusbar-item">
+        <span id="sbDbText">DB</span>
+        <div class="statusbar-dot ok" id="sbDbDot"></div>
+      </div>
     </div>
   </main>
 </div>
 
+<script src="core/common.js"></script>
 <script src="modules/router.js"></script>
 </body>
 </html>

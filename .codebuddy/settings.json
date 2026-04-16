@@ -1,0 +1,15 @@
+{
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"$CODEBUDDY_PROJECT_DIR\"/.codebuddy/hooks/search_memory.py",
+            "timeout": 5
+          }
+        ]
+      }
+    ]
+  }
+}
