@@ -56,9 +56,13 @@ def register(app, stats_db):
         if not memory_id:
             return jsonify({"error": "缺少 memory_id"})
         try:
+            # 先查内容再删除
+            from modules.brain.memory import list_memories
+            mems = list_memories()
+            content = next((m['text'] for m in mems if m['id'] == memory_id), None)
             result = delete_memory(memory_id)
             stats_db.record_action(deleted=1)
-            stats_db.append_stream('delete', memory_id=memory_id)
+            stats_db.append_stream('delete', memory_id=memory_id, content=content)
             return jsonify({"result": result})
         except Exception as e:
             return jsonify({"error": str(e)})

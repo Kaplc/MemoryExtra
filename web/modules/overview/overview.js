@@ -225,8 +225,9 @@ function drawEChart(data, range) {
     },
     yAxis: {
       type: 'value',
+      position: 'right',
       splitLine: { lineStyle: { color: '#2d314922' } },
-      axisLabel: { color: '#64748b', fontSize: 10 },
+      axisLabel: { color: '#64748b', fontSize: 10, formatter: function(v) { return v % 1 === 0 ? v : ''; } },
       axisLine: { show: false },
       axisTick: { show: false },
     },

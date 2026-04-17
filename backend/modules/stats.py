@@ -112,49 +112,56 @@ def _get_daily_data(stats_db, start_date, end_date, range_type):
 
 
 def _get_hourly_data(stats_db):
-    """获取今天按小时统计的数据，只显示到当前小时"""
-    today_str = _dt.date.today().isoformat()
-    current_hour = _dt.datetime.now().hour
+    """获取最近24小时按小时统计的数据"""
+    now = _dt.datetime.now()
+    # 24小时前的时间点
+    since = now - _dt.timedelta(hours=24)
+    since_str = since.strftime('%Y-%m-%d %H:%M:%S')
+    current_hour = now.hour
+
     db = stats_db._get_conn()
 
-    # 查询 stream 表获取今天每小时的操作记录
+    # 查询最近24小时每小时的操作记录
     rows = db.execute('''
-        SELECT strftime('%H', created_at) as hour, action, COUNT(*) as cnt
+        SELECT strftime('%Y-%m-%d %H:00:00', created_at) as hour_slot,
+               action, COUNT(*) as cnt
         FROM stream
-        WHERE date(created_at) = ?
-        GROUP BY hour, action
-        ORDER BY hour
-    ''', (today_str,)).fetchall()
+        WHERE created_at >= ?
+        GROUP BY hour_slot, action
+        ORDER BY hour_slot
+    ''', (since_str,)).fetchall()
     db.close()
 
-    hourly_data = []
-    total_so_far = 0
-
-    # 获取今天之前的累计总数
-    db = stats_db._get_conn()
-    prev_total = db.execute('''
-        SELECT SUM(added - deleted) as total FROM daily_stats WHERE date < ?
-    ''', (today_str,)).fetchone()
-    db.close()
-    total_so_far = prev_total['total'] or 0
-
-    # 按小时聚合
+    # 按小时槽聚合
     hour_stats = {}
     for r in rows:
-        h = int(r['hour'])
-        if h not in hour_stats:
-            hour_stats[h] = {'added': 0, 'updated': 0}
+        slot = r['hour_slot']
+        if slot not in hour_stats:
+            hour_stats[slot] = {'added': 0, 'updated': 0}
         if r['action'] == 'store':
-            hour_stats[h]['added'] += r['cnt']
+            hour_stats[slot]['added'] += r['cnt']
         elif r['action'] == 'update':
-            hour_stats[h]['updated'] += r['cnt']
+            hour_stats[slot]['updated'] += r['cnt']
 
-    # 生成到当前小时的数据
-    for h in range(current_hour + 1):
-        stats = hour_stats.get(h, {'added': 0, 'updated': 0})
+    # 获取24小时之前的累计总数
+    db = stats_db._get_conn()
+    prev_total = db.execute('''
+        SELECT SUM(added - deleted) as total FROM daily_stats
+        WHERE date < ?
+    ''', (since.date().isoformat(),)).fetchone()
+    db.close()
+    total_so_far = prev_total['total'] or 0 if prev_total else 0
+
+    # 生成最近24小时数据
+    hourly_data = []
+    for i in range(24):
+        slot_time = since + _dt.timedelta(hours=i)
+        slot_str = slot_time.strftime('%H:00')
+        iso_slot = slot_time.strftime('%Y-%m-%d %H:00:00')
+        stats = hour_stats.get(iso_slot, {'added': 0, 'updated': 0})
         total_so_far += stats['added']
         hourly_data.append({
-            "date": f"{h:02d}:00",
+            "date": slot_str,
             "added": stats['added'],
             "updated": stats['updated'],
             "total": max(0, total_so_far),
