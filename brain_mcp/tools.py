@@ -2,13 +2,25 @@
 MCP Tools - 通过 Flask API 调用，不直接加载模型或连接 Qdrant
 """
 import logging
+import os
 import urllib.request
 import urllib.error
 import json
 
 logger = logging.getLogger(__name__)
 
-API_BASE = "http://127.0.0.1:18765"
+# 从环境变量或 .port_config 读取 Flask 端口
+_flask_port = os.environ.get('FLASK_PORT')
+if not _flask_port:
+    _port_config = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '.port_config'))
+    if os.path.exists(_port_config):
+        try:
+            with open(_port_config, 'r') as f:
+                _flask_port = f.read().strip().split(',')[0]
+        except Exception:
+            pass
+
+API_BASE = f"http://127.0.0.1:{_flask_port or '18765'}"
 
 
 def _call(path: str, data: dict) -> dict:

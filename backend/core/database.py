@@ -142,7 +142,7 @@ class StatsDB:
             from brain_mcp.config import settings
             from qdrant_client import QdrantClient
             
-            client = QdrantClient(host=settings.qdrant_host, port=settings.qdrant_port)
+            client = QdrantClient(host=settings.qdrant_host, port=settings.qdrant_port, check_compatibility=False)
             collection_info = client.get_collection(settings.collection_name)
             qdrant_count = collection_info.points_count
             

@@ -187,6 +187,23 @@ if __name__ == '__main__':
                 logger.info("Port file cleaned up")
         except Exception:
             pass
+
+        # 关闭 Qdrant 进程
+        import subprocess
+        try:
+            result = subprocess.run(
+                ['netstat', '-ano'], capture_output=True, text=True, timeout=5
+            )
+            for line in result.stdout.splitlines():
+                if f':{_QDRANT_HTTP_PORT}' in line and 'LISTENING' in line:
+                    pid = int(line.strip().split()[-1])
+                    subprocess.run(['taskkill', '/F', '/PID', str(pid)],
+                                   capture_output=True, timeout=5)
+                    logger.info(f"Qdrant process (PID {pid}) terminated")
+                    break
+        except Exception as e:
+            logger.warning(f"Failed to stop Qdrant: {e}")
+
         os._exit(0)
 
     window.events.closed += on_window_close

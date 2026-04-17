@@ -156,7 +156,7 @@ def _get_qdrant_count(settings):
     """获取 Qdrant 集合中的记忆数量"""
     try:
         from qdrant_client import QdrantClient
-        client = QdrantClient(host=settings.qdrant_host, port=settings.qdrant_port)
+        client = QdrantClient(host=settings.qdrant_host, port=settings.qdrant_port, check_compatibility=False)
         collection_info = client.get_collection(settings.collection_name)
         return collection_info.points_count
     except Exception:

@@ -23,6 +23,7 @@ def get_client() -> QdrantClient:
             host=settings.qdrant_host,
             grpc_port=settings.qdrant_port + 1,  # 6334
             prefer_grpc=True,
+            check_compatibility=False,
         )
         _ensure_collection()
     return _client

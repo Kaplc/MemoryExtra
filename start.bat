@@ -44,13 +44,13 @@ echo Virtual Environment: Python %PY_VER%
 
 :: ── 检查依赖 ──────────────────────────────────────────
 echo === Checking Dependencies ===
-"venv312\Scripts\python.exe" -c "import flask, webview, qdrant_client, psutil, fastmcp, mcp, pydantic, sentence_transformers" 2>NUL
+"venv312\Scripts\python.exe" "backend\_boot_helper.py" deps 2>NUL
 if %ERRORLEVEL% neq 0 (
     echo Missing dependencies detected, installing...
     echo This may take a few minutes on first run...
     call "venv312\Scripts\pip.exe" install -r "backend\requirements.txt" 2>NUL
-    :: 验证核心包是否安装成功（忽略 pip 升级提示导致的非零退出码）
-    "venv312\Scripts\python.exe" -c "import flask, webview, qdrant_client, psutil, fastmcp, mcp, pydantic, sentence_transformers" 2>NUL
+    :: 验证所有包是否安装成功（忽略 pip 升级提示导致的非零退出码）
+    "venv312\Scripts\python.exe" "backend\_boot_helper.py" deps 2>NUL
     if %ERRORLEVEL% neq 0 (
         echo Failed to install dependencies. Please check your network connection or Python installation.
         pause
@@ -96,19 +96,19 @@ if %ERRORLEVEL% == 0 (
 ) else (
     start "" /MIN "backend\qdrant\qdrant.exe" --config-path "backend\qdrant\config\config.yaml"
     echo Qdrant started on port %QDRANT_HTTP%, waiting for it to be ready...
-    :: 等待 Qdrant 就绪（最多 30 秒）
+    :: 通过 HTTP API 等待 Qdrant 完全就绪（最多 60 秒）
     set "QDRANT_WAIT=0"
     :wait_qdrant
     ping -n 2 127.0.0.1 >NUL 2>&1
-    netstat -ano 2>NUL | findstr ":%QDRANT_HTTP%.*LISTENING" >NUL
+    "venv312\Scripts\python.exe" -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:%QDRANT_HTTP%/healthz', timeout=3)" 2>NUL
     if !ERRORLEVEL! equ 0 (
         echo Qdrant is ready.
     ) else (
         set /a QDRANT_WAIT+=1
-        if !QDRANT_WAIT! lss 30 (
+        if !QDRANT_WAIT! lss 60 (
             goto wait_qdrant
         ) else (
-            echo WARNING: Qdrant did not respond within 30 seconds, continuing anyway...
+            echo WARNING: Qdrant did not respond within 60 seconds, continuing anyway...
         )
     )
 )

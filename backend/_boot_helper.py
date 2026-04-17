@@ -90,7 +90,7 @@ def kill_old_instance():
     if old_port:
         import urllib.request
         try:
-            urllib.request.urlopen(f'http://127.0.0.1:{old_port}/health', timeout=2)
+            urllib.request.urlopen(f'http://127.0.0.1:{old_port}', timeout=2)
             # 实例存活，杀掉
             result = subprocess.run(
                 ['netstat', '-ano'], capture_output=True, text=True, timeout=5
@@ -107,6 +107,60 @@ def kill_old_instance():
     return False
 
 
+def check_deps():
+    """从 requirements.txt 读取包名并检查是否已安装"""
+    import re, importlib.util
+    req_file = os.path.normpath(os.path.join(os.path.dirname(__file__), '..', 'backend', 'requirements.txt'))
+    missing = []
+    if not os.path.exists(req_file):
+        return True  # 文件不存在则跳过检查
+
+    with open(req_file, 'r') as f:
+        for line in f:
+            line = line.strip()
+            if not line or line.startswith('#'):
+                continue
+            pkg = re.sub(r'[<>=!].*$', '', line).strip().lower()
+            # 包名到 import 名的映射（pip 包名与 Python import 名不一致的情况）
+            alias_map = {
+                'flask': 'flask',
+                'flask-cors': 'flask_cors',
+                'pywebview': 'webview',
+                'pillow': 'PIL',
+                'pyautogui': 'pyautogui',
+                'pyperclip': 'pyperclip',
+                'pygetwindow': 'pygetwindow',
+                'qdrant-client': 'qdrant_client',
+                'sentence-transformers': 'sentence_transformers',
+                'transformers': 'transformers',
+                'tokenizers': 'tokenizers',
+                'safetensors': 'safetensors',
+                'huggingface_hub': 'huggingface_hub',
+                'torch': 'torch',
+                'pydantic': 'pydantic',
+                'pydantic-settings': 'pydantic_settings',
+                'psutil': 'psutil',
+                'nvidia-ml-py': 'pynvml',
+                'scikit-learn': 'sklearn',
+                'scipy': 'scipy',
+                'tqdm': 'tqdm',
+                'python-dotenv': 'dotenv',
+                'fastmcp': 'fastmcp',
+                'mcp': 'mcp',
+            }
+            imp_name = alias_map.get(pkg, pkg.replace('-', '_'))
+            spec = importlib.util.find_spec(imp_name)
+            if spec is None:
+                missing.append(pkg)
+
+    if missing:
+        print(f'MISSING: {",".join(missing)}')
+        sys.exit(1)
+    else:
+        print('OK')
+        sys.exit(0)
+
+
 if __name__ == '__main__':
     action = sys.argv[1] if len(sys.argv) > 1 else ''
     if action == 'ports':
@@ -114,3 +168,5 @@ if __name__ == '__main__':
         print(f"{p['flask']},{p['http']},{p['grpc']}")
     elif action == 'kill':
         kill_old_instance()
+    elif action == 'deps':
+        check_deps()
