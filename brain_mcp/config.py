@@ -14,3 +14,9 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
+
+# 多实例支持：从环境变量覆盖端口
+import os
+_http_port = os.environ.get('QDRANT_HTTP_PORT')
+if _http_port:
+    settings.qdrant_port = int(_http_port)

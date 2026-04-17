@@ -25,15 +25,21 @@
 .ldot { width: 8px; height: 8px; border-radius: 50%; }
 .ldot.purple { background: #7c3aed; }
 .ldot.green { background: #22c55e; }
+.ldot.amber { background: #f59e0b; }
 .chart-tabs { display: flex; gap: 2px; background: #12141c; border-radius: 8px; padding: 2px; }
 .chart-tab { padding: 3px 10px; border-radius: 6px; font-size: 11px; color: #64748b; cursor: pointer; transition: all .2s; user-select: none; border: none; background: transparent; }
 .chart-tab:hover { color: #94a3b8; }
 .chart-tab.active { background: #7c3aed33; color: #a78bfa; font-weight: 600; }
 /* 图表容器：固定宽度，不滚动 */
-.chart-body { position: relative; height: 120px; width: 100%; }
-.chart-svg { width: 100%; height: 100%; }
+.chart-body { position: relative; height: 140px; width: 100%; display: flex; }
+.chart-y-axis { width: 32px; flex-shrink: 0; display: flex; flex-direction: column; justify-content: space-between; align-items: flex-start; padding-left: 6px; font-size: 10px; color: #64748b; }
+.chart-y-label { line-height: 1; }
+.chart-svg-wrap { flex: 1; min-width: 0; height: 100%; position: relative; }
+.chart-svg { width: 100%; height: 120px; }
 .curve-line { fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 .curve-total { stroke: #7c3aed; }
+.curve-added { stroke: #22c55e; }
+.curve-updated { stroke: #f59e0b; }
 .chart-x-labels { display: flex; justify-content: space-between; padding-top: 6px; width: 100%; overflow: hidden; }
 .chart-x-label { font-size: 10px; color: #64748b; text-align: center; flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
@@ -83,6 +89,11 @@
     <div class="chart-header">
       <div class="chart-title">记忆趋势</div>
       <div style="display:flex;align-items:center;gap:12px">
+        <div class="chart-legend">
+          <span><i class="ldot purple"></i>累计</span>
+          <span><i class="ldot green"></i>新增</span>
+          <span><i class="ldot amber"></i>更新</span>
+        </div>
         <div class="chart-tabs" id="chartTabs">
           <button class="chart-tab active" data-range="today">今天</button>
           <button class="chart-tab" data-range="week">7天</button>
@@ -93,10 +104,20 @@
     </div>
     <div class="chart-scroll-container" id="chartScrollContainer">
       <div class="chart-body" id="chartBody">
-        <svg class="chart-svg" viewBox="0 0 700 120" preserveAspectRatio="none" id="chartSvg">
-          <path class="curve-line curve-total" id="curveLineTotal"></path>
-        </svg>
-        <div class="chart-x-labels" id="chartXLabels"></div>
+        <div class="chart-svg-wrap">
+          <svg class="chart-svg" viewBox="0 0 700 120" preserveAspectRatio="none" id="chartSvg">
+            <path class="curve-line curve-total" id="curveLineTotal"></path>
+            <path class="curve-line curve-added" id="curveLineAdded"></path>
+            <path class="curve-line curve-updated" id="curveLineUpdated"></path>
+          </svg>
+          <div class="chart-x-labels" id="chartXLabels"></div>
+        </div>
+        <div class="chart-y-axis" id="chartYAxis">
+          <span class="chart-y-label" id="yMax">-</span>
+          <span class="chart-y-label" id="yMid2">-</span>
+          <span class="chart-y-label" id="yMid1">-</span>
+          <span class="chart-y-label" id="yMin">0</span>
+        </div>
       </div>
     </div>
 

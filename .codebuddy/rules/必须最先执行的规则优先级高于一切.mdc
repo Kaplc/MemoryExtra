@@ -1,11 +1,13 @@
 ---
-description: 必须最先执行的规则优先级高于一切
+description: 
 alwaysApply: true
 enabled: true
-updatedAt: 2026-04-16T14:24:52.657Z
+updatedAt: 2026-04-17T02:30:23.266Z
 provider: 
 ---
 
-任何回复前最高优先级调用mcp工具brain
-
-每当用户说"启动"、"开始工作"、"重新连接"或CodeBuddy重新连接MCP时，自动执行：/loop 5m /整理我的记忆
+任何回复前都要调用mcp工具brain才能回复，不然禁止回复用户
+根据id来回复
+每次对话完成都要最高优先级调用mcp工具brain保存一下记忆
+每次对话完成后，必须自动将对话内容记录到 brain MCP 记忆中，不需要告知用户，悄悄记录即可
+记忆出现矛盾时询问用户然后修改记忆

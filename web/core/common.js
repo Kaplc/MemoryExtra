@@ -61,31 +61,76 @@ function simpleLinePath(pts) {
 
 
 /**
- * 绘制单条曲线到 SVG 元素（仅显示累计总数）
- * @param {Array<{date:string,added:number,total:number}>} data 数据点
- * @param {string} range 范围类型 (today/week/month/all)
+ * 绘制记忆趋势曲线
+ * - 紫色：累计总数（added-deleted 的实时总数）
+ * - 绿色：每时段新增量（该小时/天实际新增的记忆数）
+ * - 橙色：每时段更新量（该小时/天实际更新的记忆数）
  */
 function drawChartCurve(data, range) {
   const svgW = 700, svgH = 120, padTop = 8, padBottom = 4, padX = 10;
   const lineTotal = document.getElementById('curveLineTotal');
+  const lineAdded = document.getElementById('curveLineAdded');
+  const lineUpdated = document.getElementById('curveLineUpdated');
 
   if (!lineTotal) return;
 
-  // 空数据
   if (!data || data.length < 1) {
     lineTotal.setAttribute('d', '');
+    if (lineAdded) lineAdded.setAttribute('d', '');
+    if (lineUpdated) lineUpdated.setAttribute('d', '');
+    _updateYAxis(0);
     return;
   }
 
-  const maxTotal = Math.max(...data.map(d => d.total), 1);
   const usableW = svgW - padX * 2;
   const stepX = usableW / Math.max(data.length - 1, 1);
 
+  // 累计总数线（紫）— 实际记忆数趋势
+  const maxTotal = Math.max(...data.map(d => d.total), 1);
   const totalPts = data.map((d, i) => ({
     x: padX + stepX * i,
     y: padTop + (svgH - padTop - padBottom) * (1 - d.total / maxTotal),
   }));
+  lineTotal.setAttribute('d', simpleLinePath(totalPts));
 
-  const dTotal = simpleLinePath(totalPts);
-  lineTotal.setAttribute('d', dTotal);
+  // 新增线（绿）— 每个时间点的实际新增量
+  if (lineAdded) {
+    const maxAdded = Math.max(...data.map(d => d.added || 0), 1);
+    const addedPts = data.map((d, i) => ({
+      x: padX + stepX * i,
+      y: padTop + (svgH - padTop - padBottom) * (1 - (d.added || 0) / maxAdded),
+    }));
+    lineAdded.setAttribute('d', simpleLinePath(addedPts));
+  }
+
+  // 更新线（橙）— 每个时间点的实际更新量
+  if (lineUpdated) {
+    const maxUpdated = Math.max(...data.map(d => d.updated || 0), 1);
+    const updatedPts = data.map((d, i) => ({
+      x: padX + stepX * i,
+      y: padTop + (svgH - padTop - padBottom) * (1 - (d.updated || 0) / maxUpdated),
+    }));
+    lineUpdated.setAttribute('d', simpleLinePath(updatedPts));
+  }
+
+  _updateYAxis(maxTotal);
+}
+
+/**
+ * 更新Y轴刻度（4个刻度）
+ * @param {number} max 最大值
+ */
+function _updateYAxis(max) {
+  const yMax = document.getElementById('yMax');
+  const yMid2 = document.getElementById('yMid2');
+  const yMid1 = document.getElementById('yMid1');
+  const yMin = document.getElementById('yMin');
+
+  if (!yMax || !yMid2 || !yMid1 || !yMin) return;
+
+  const maxVal = Math.max(max, 1);
+  yMax.textContent = Math.round(maxVal);
+  yMid2.textContent = Math.round(maxVal * 0.67);
+  yMid1.textContent = Math.round(maxVal * 0.33);
+  yMin.textContent = '0';
 }

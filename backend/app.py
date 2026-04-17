@@ -1,6 +1,7 @@
 """
 Memory Manager - PyWebView 前端入口
 模块化架构：core/ 通用模块 + modules/ 路由模块
+单项目单实例 + 多项目端口隔离（start.bat 自动分配端口）
 """
 import os
 import sys
@@ -16,6 +17,10 @@ _BASE = os.path.dirname(os.path.abspath(__file__))
 _PROJECT_ROOT = os.path.normpath(os.path.join(_BASE, '..'))
 sys.path.insert(0, _BASE)  # 让 core/modules 可被导入
 
+# ── 端口（由 start.bat 通过环境变量传入）────────────────
+_FLASK_PORT = int(os.environ.get('FLASK_PORT', '18765'))
+_QDRANT_HTTP_PORT = int(os.environ.get('QDRANT_HTTP_PORT', '6333'))
+
 os.environ.setdefault('QDRANT_EMBEDDING_MODEL', os.path.join(_PROJECT_ROOT, 'models', 'bge-m3'))
 os.environ.setdefault('QDRANT_EMBEDDING_DIM', '1024')
 os.environ.setdefault('QDRANT_EXE_PATH', os.path.join(_BASE, 'qdrant', 'qdrant.exe'))
@@ -23,6 +28,7 @@ os.environ.setdefault('FORCE_CPU', '0')
 
 from flask import Flask, request, jsonify
 from flask_cors import CORS
+
 
 # ── 初始化 core 模块 ──────────────────────────────────────
 from core.logger import setup_logger
@@ -85,9 +91,9 @@ def log():
 def _preload():
     try:
         import urllib.request
-        urllib.request.urlopen('http://localhost:6333/healthz', timeout=5)
+        urllib.request.urlopen(f'http://localhost:{_QDRANT_HTTP_PORT}/healthz', timeout=5)
         _ready["qdrant"] = True
-        logger.info("Qdrant connected")
+        logger.info(f"Qdrant connected on port {_QDRANT_HTTP_PORT}")
         
         # 同步 Qdrant 记忆数量到数据库
         try:
@@ -109,19 +115,20 @@ threading.Thread(target=_preload, daemon=True).start()
 # ── 启动 ───────────────────────────────────────────────────
 
 def start_flask():
-    app.run(host='127.0.0.1', port=18765, debug=False, use_reloader=False)
+    app.run(host='127.0.0.1', port=_FLASK_PORT, debug=False, use_reloader=False)
 
 
 if __name__ == '__main__':
-    # ── 单例检查：防止重复启动 ────────────────────────────
-    import socket
-    _sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    if _sock.connect_ex(('127.0.0.1', 18765)) == 0:
-        _sock.close()
-        logger.error('Port 18765 is already in use! Another instance is running.')
-        logger.error('Please close the existing instance before starting a new one.')
-        sys.exit(1)
-    _sock.close()
+    # ── 写入 .port 文件（供 start.bat 单例检测用）───────
+    _port_file = os.path.join(_PROJECT_ROOT, '.port')
+    try:
+        with open(_port_file, 'w') as pf:
+            pf.write(str(_FLASK_PORT))
+        logger.info(f"Port file written: {_FLASK_PORT}")
+    except Exception as e:
+        logger.warning(f"Failed to write port file: {e}")
+
+    logger.info(f"Starting -> Flask:{_FLASK_PORT} Qdrant-HTTP:{_QDRANT_HTTP_PORT}")
 
     flask_thread = threading.Thread(target=start_flask, daemon=False)
     flask_thread.start()
@@ -131,8 +138,8 @@ if __name__ == '__main__':
     logger.info('Waiting for Flask to be ready...')
     for _ in range(30):
         try:
-            urllib.request.urlopen(f'http://127.0.0.1:18765/health', timeout=2)
-            logger.info('Flask is ready')
+            urllib.request.urlopen(f'http://127.0.0.1:{_FLASK_PORT}/health', timeout=2)
+            logger.info(f'Flask is ready on port {_FLASK_PORT}')
             break
         except Exception:
             import time; time.sleep(0.5)
@@ -142,16 +149,23 @@ if __name__ == '__main__':
     ui_path = os.path.join(os.path.dirname(__file__), '..', 'web', 'index.html')
     window = webview.create_window(
         title='Memory Manager',
-        url=f'http://127.0.0.1:18765',
+        url=f'http://127.0.0.1:{_FLASK_PORT}',
         width=1000,
         height=680,
         min_size=(800, 500),
         background_color='#0f1117',
     )
 
-    # 窗口关闭时停止整个应用
+    # 窗口关闭时清理
     def on_window_close():
         logger.info('Window closed, shutting down...')
+        try:
+            _pf = os.path.join(_PROJECT_ROOT, '.port')
+            if os.path.exists(_pf):
+                os.remove(_pf)
+                logger.info("Port file cleaned up")
+        except Exception:
+            pass
         os._exit(0)
 
     window.events.closed += on_window_close
