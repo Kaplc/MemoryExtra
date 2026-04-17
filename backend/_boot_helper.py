@@ -39,20 +39,15 @@ def is_port_free(port):
 
 
 def find_free_ports():
-    """从项目专属基础端口递增，找到一组可用的 Flask+Qdrant 端口"""
-    offset, _ = project_hash_offset()
-    for i in range(100):
-        o = offset + i * 3
-        f = BASE_FLASK + (o % (MAX_OFFSET * 10))
-        h = BASE_QDRANT_HTTP + (o % (MAX_OFFSET * 10))
-        g = BASE_QDRANT_GRPC + (o % (MAX_OFFSET * 10))
-        if is_port_free(f) and is_port_free(h) and is_port_free(g):
-            return {"flask": f, "http": h, "grpc": g}
+    """从基础端口开始，查找5个连续空闲的端口"""
+    for start in range(BASE_FLASK, 65535 - 4):
+        if all(is_port_free(start + i) for i in range(5)):
+            return start, start + 1, start + 2, start + 3, start + 4
     raise RuntimeError("无法找到可用端口")
 
 
 def get_ports():
-    """返回端口字典：优先读 .port_config，否则分配并保存"""
+    """返回端口列表：优先读 .port_config，否则分配并保存"""
     config_path = os.path.normpath(os.path.join(os.path.dirname(__file__), '..', '.port_config'))
 
     if os.path.exists(config_path):
@@ -60,8 +55,8 @@ def get_ports():
             with open(config_path, 'r') as f:
                 line = f.read().strip()
             parts = line.split(',')
-            if len(parts) >= 3:
-                return {"flask": int(parts[0]), "http": int(parts[1]), "grpc": int(parts[2])}
+            if len(parts) >= 5:
+                return [int(p) for p in parts[:5]]
         except Exception:
             pass
 
@@ -69,7 +64,7 @@ def get_ports():
     ports = find_free_ports()
     try:
         with open(config_path, 'w') as f:
-            f.write(f"{ports['flask']},{ports['http']},{ports['grpc']}")
+            f.write(','.join(str(p) for p in ports))
     except Exception:
         pass
     return ports
@@ -164,8 +159,8 @@ def check_deps():
 if __name__ == '__main__':
     action = sys.argv[1] if len(sys.argv) > 1 else ''
     if action == 'ports':
-        p = get_ports()
-        print(f"{p['flask']},{p['http']},{p['grpc']}")
+        ports = get_ports()
+        print(','.join(str(p) for p in ports))
     elif action == 'kill':
         kill_old_instance()
     elif action == 'deps':

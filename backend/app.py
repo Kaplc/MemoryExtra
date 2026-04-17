@@ -106,6 +106,9 @@ def _preload():
     # 同步 Qdrant 记忆数量到数据库
     if _ready["qdrant"]:
         try:
+            # 确保 collection 存在
+            from brain_mcp._core import get_client
+            get_client()
             count = stats_db.sync_qdrant_count()
             if count is not None:
                 logger.info(f"Synced memory count from Qdrant: {count}")

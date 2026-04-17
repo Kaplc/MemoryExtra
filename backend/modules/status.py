@@ -112,21 +112,13 @@ def register(app, ready_state, logger, stats_db):
 
     @app.route('/memory-count', methods=['GET'])
     def memory_count():
-        """获取记忆总数（直接从 Qdrant 获取真实数量）"""
+        """获取记忆总数（从数据库读取，数据库已与 Qdrant 同步）"""
         try:
-            from brain_mcp._core import get_client
-            client = get_client()
-            collection_info = client.get_collection(settings.collection_name)
-            count = collection_info.points_count
+            count = stats_db.get_memory_count()
             return jsonify({"count": count})
         except Exception as e:
             logger.error(f"[memory-count] error: {e}")
-            # fallback: 从 SQLite 读取
-            try:
-                count = stats_db.get_memory_count()
-                return jsonify({"count": count})
-            except Exception:
-                return jsonify({"count": 0, "error": str(e)})
+            return jsonify({"count": 0, "error": str(e)})
 
     @app.route('/health', methods=['GET'])
     def health():

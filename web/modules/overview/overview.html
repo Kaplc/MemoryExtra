@@ -43,6 +43,33 @@
 .chart-x-labels { display: flex; justify-content: space-between; padding-top: 6px; width: 100%; overflow: hidden; }
 .chart-x-label { font-size: 10px; color: #64748b; text-align: center; flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
+/* 图表端点悬浮窗 */
+.chart-dot { cursor: pointer; transition: r .15s; }
+.chart-dot:hover { r: 5; }
+.chart-tooltip {
+  position: absolute;
+  background: #1e293b;
+  border: 1px solid #475569;
+  border-radius: 8px;
+  padding: 10px 12px;
+  font-size: 12px;
+  color: #e2e8f0;
+  pointer-events: none;
+  z-index: 100;
+  box-shadow: 0 4px 12px rgba(0,0,0,.4);
+  min-width: 120px;
+  opacity: 0;
+  transition: opacity .15s;
+}
+.chart-tooltip.visible { opacity: 1; }
+.tooltip-date { font-weight: 600; color: #a78bfa; margin-bottom: 6px; font-size: 11px; }
+.tooltip-row { display: flex; justify-content: space-between; gap: 16px; margin: 3px 0; }
+.tooltip-label { color: #94a3b8; }
+.tooltip-val { font-weight: 600; }
+.tooltip-val.purple { color: #a78bfa; }
+.tooltip-val.green { color: #86efac; }
+.tooltip-val.amber { color: #fde047; }
+
 /* Stats inside chart section */
 .chart-stats { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; padding-top: 16px; border-top: 1px solid #2d3149; }
 .stat-box { text-align: center; }
@@ -77,6 +104,7 @@
       <div class="sc-label">设备信息</div>
       <div class="sc-sub" id="scDeviceSub1"></div>
       <div class="sc-sub" id="scDeviceSub2"></div>
+      <div class="sc-sub" id="scDeviceSub2b"></div>
       <div class="sc-sub" id="scDeviceSub3"></div>
       <div class="sc-sub" id="scDeviceSub4"></div>
       <div class="sc-sub" id="scDeviceSub5"></div>
@@ -103,22 +131,7 @@
       </div>
     </div>
     <div class="chart-scroll-container" id="chartScrollContainer">
-      <div class="chart-body" id="chartBody">
-        <div class="chart-svg-wrap">
-          <svg class="chart-svg" viewBox="0 0 700 120" preserveAspectRatio="none" id="chartSvg">
-            <path class="curve-line curve-total" id="curveLineTotal"></path>
-            <path class="curve-line curve-added" id="curveLineAdded"></path>
-            <path class="curve-line curve-updated" id="curveLineUpdated"></path>
-          </svg>
-          <div class="chart-x-labels" id="chartXLabels"></div>
-        </div>
-        <div class="chart-y-axis" id="chartYAxis">
-          <span class="chart-y-label" id="yMax">-</span>
-          <span class="chart-y-label" id="yMid2">-</span>
-          <span class="chart-y-label" id="yMid1">-</span>
-          <span class="chart-y-label" id="yMin">0</span>
-        </div>
-      </div>
+      <div id="chartContainer" style="width:100%;height:140px;"></div>
     </div>
 
     <!-- Stats row inside chart -->

@@ -21,7 +21,7 @@ def get_client() -> QdrantClient:
     if _client is None:
         _client = QdrantClient(
             host=settings.qdrant_host,
-            grpc_port=settings.qdrant_port + 1,  # 6334
+            grpc_port=settings.grpc_port,
             prefer_grpc=True,
             check_compatibility=False,
         )

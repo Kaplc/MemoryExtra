@@ -59,6 +59,7 @@ function cleanup() {
 function updateDeviceCard(sysInfo) {
   const devSub1 = document.getElementById('scDeviceSub1');
   const devSub2 = document.getElementById('scDeviceSub2');
+  const devSub2b = document.getElementById('scDeviceSub2b');
   const devSub3 = document.getElementById('scDeviceSub3');
   const devSub4 = document.getElementById('scDeviceSub4');
   const devSub5 = document.getElementById('scDeviceSub5');
@@ -71,6 +72,9 @@ function updateDeviceCard(sysInfo) {
 
   // 2. CPU
   if (devSub2) devSub2.textContent = `CPU ${(sysInfo.cpu_percent||0).toFixed(0)}%`;
+
+  // 2b. CPU 温度
+  if (devSub2b) devSub2b.textContent = sysInfo.cpu_temperature != null ? `CPU温度 ${sysInfo.cpu_temperature}°C` : '';
 
   // 3. 内存大小
   const sysMemTotal = sysInfo.memory_total / (1024**3);
@@ -126,14 +130,17 @@ async function loadOverviewPage() {
     const qPortSub = document.getElementById('scQdrantPortSub');
     const qCollectionSub = document.getElementById('scQdrantCollectionSub');
     const qTopKSub = document.getElementById('scQdrantTopKSub');
+    const qDimSub = document.getElementById('scDimSub');
     if (qHostSub) qHostSub.textContent = `Host: ${st.qdrant_host || 'localhost'}`;
     if (qPortSub) qPortSub.textContent = `Port: ${st.qdrant_port || 6333}`;
     if (qCollectionSub) qCollectionSub.textContent = `Collection: ${st.qdrant_collection || 'memories'}`;
     if (qTopKSub) qTopKSub.textContent = `Top-K: ${st.qdrant_top_k || 5}`;
+    if (qDimSub) qDimSub.textContent = `维度: ${st.embedding_dim || 1024}`;
 
     // Device info
     const devSub1 = document.getElementById('scDeviceSub1');
     const devSub2 = document.getElementById('scDeviceSub2');
+    const devSub2b = document.getElementById('scDeviceSub2b');
     const devSub3 = document.getElementById('scDeviceSub3');
     const devSub4 = document.getElementById('scDeviceSub4');
     const devSub5 = document.getElementById('scDeviceSub5');
@@ -146,6 +153,9 @@ async function loadOverviewPage() {
     // 2. CPU
     const cpuPct = sysInfo.cpu_percent;
     if (devSub2) devSub2.textContent = `CPU ${(sysInfo.cpu_percent||0).toFixed(0)}%`;
+
+    // 2b. CPU 温度
+    if (devSub2b) devSub2b.textContent = sysInfo.cpu_temperature != null ? `CPU温度 ${sysInfo.cpu_temperature}°C` : '';
 
     // 3. 内存大小
     const sysMemTotal = sysInfo.memory_total / (1024**3);
@@ -181,60 +191,106 @@ async function loadOverviewPage() {
 
 // ── 图表 ───────────────────────────────────────────────────
 
-function _formatXLabels(data, range) {
-  const container = document.querySelector('.chart-x-labels');
+var _chartInstance = null;
+var _chartData = null;  // 存储原始数据供 tooltip 使用
+
+function initChart() {
+  const container = document.getElementById('chartContainer');
   if (!container) return;
-  if (!data || data.length === 0) { container.innerHTML = '<span class="chart-x-label">暂无数据</span>'; return; }
+  _chartInstance = echarts.init(container, null, { renderer: 'canvas' });
+}
 
-  // 获取容器宽度
-  const containerWidth = container.clientWidth;
-  const dataCount = data.length;
+function drawEChart(data, range) {
+  if (!_chartInstance) initChart();
+  if (!_chartInstance) return;
 
-  // 根据容器宽度和数据点数量计算合适的显示间隔
-  const minLabelWidth = 40;
-  const maxLabels = Math.max(2, Math.floor(containerWidth / minLabelWidth));
-  const step = Math.max(1, Math.ceil(dataCount / maxLabels));
+  // 保存原始数据供 tooltip 使用
+  _chartData = data;
 
-  // 只生成需要显示的标签，不生成空标签
-  const labels = [];
-  data.forEach((d, index) => {
-    // 根据间隔跳过一些标签，但确保显示第一个和最后一个标签
-    if (index % step === 0 || index === 0 || index === dataCount - 1) {
-      let label;
-      if (range === 'today') {
-        label = d.date;
-      } else {
-        const day = d.date.slice(-2);
-        if (day === '01') {
-          // 1号显示月份，如 "03月"
-          label = d.date.slice(5, 7) + '月';
-        } else {
-          // 其他日期只显示天，如 "25"
-          label = day;
-        }
-      }
-      labels.push('<span class="chart-x-label">' + label + '</span>');
-    }
+  const dates = data.map(d => {
+    if (range === 'today') return d.date;
+    const day = d.date.slice(-2);
+    if (day === '01') return d.date.slice(5, 7) + '月';
+    return day;
   });
 
-  // 设置标签数量并渲染
-  const labelCount = labels.length;
-  container.style.setProperty('--label-count', labelCount);
-  container.innerHTML = labels.join('');
+  const option = {
+    grid: { top: 8, right: 8, bottom: 24, left: 32 },
+    xAxis: {
+      type: 'category',
+      data: dates,
+      axisLine: { lineStyle: { color: '#2d3149' } },
+      axisLabel: { color: '#64748b', fontSize: 10 },
+      axisTick: { show: false },
+    },
+    yAxis: {
+      type: 'value',
+      splitLine: { lineStyle: { color: '#2d314922' } },
+      axisLabel: { color: '#64748b', fontSize: 10 },
+      axisLine: { show: false },
+      axisTick: { show: false },
+    },
+    tooltip: {
+      trigger: 'axis',
+      backgroundColor: '#1e293b',
+      borderColor: '#475569',
+      borderWidth: 1,
+      textStyle: { color: '#e2e8f0', fontSize: 12 },
+      formatter: function(params) {
+        // 使用原始数据中的完整日期
+        const rawData = _chartData ? _chartData[params[0].dataIndex] : null;
+        const fullDate = rawData ? rawData.date : params[0].axisValue;
+        let html = '<div style="font-weight:600;color:#a78bfa;margin-bottom:6px">' + fullDate + '</div>';
+        params.forEach(p => {
+          const colors = { '累计': '#a78bfa', '新增': '#86efac', '更新': '#fde047' };
+          html += '<div style="display:flex;justify-content:space-between;gap:12px;margin:2px 0"><span style="color:#94a3b8">' + p.seriesName + '</span><span style="font-weight:600;color:' + (colors[p.seriesName] || '#fff') + '">' + p.value + '</span></div>';
+        });
+        return html;
+      }
+    },
+    series: [
+      {
+        name: '累计',
+        type: 'line',
+        data: data.map(d => d.total),
+        smooth: true,
+        symbol: 'circle',
+        symbolSize: 6,
+        lineStyle: { color: '#7c3aed', width: 2 },
+        itemStyle: { color: '#7c3aed' },
+        areaStyle: { color: 'rgba(124,58,237,0.1)' },
+      },
+      {
+        name: '新增',
+        type: 'line',
+        data: data.map(d => d.added || 0),
+        smooth: true,
+        symbol: 'circle',
+        symbolSize: 6,
+        lineStyle: { color: '#22c55e', width: 2 },
+        itemStyle: { color: '#22c55e' },
+      },
+      {
+        name: '更新',
+        type: 'line',
+        data: data.map(d => d.updated || 0),
+        smooth: true,
+        symbol: 'circle',
+        symbolSize: 6,
+        lineStyle: { color: '#f59e0b', width: 2 },
+        itemStyle: { color: '#f59e0b' },
+      },
+    ],
+  };
+
+  _chartInstance.setOption(option);
 }
 
 // 添加窗口大小变化监听
 window.addEventListener('resize', () => {
   if (_resizeTimer) clearTimeout(_resizeTimer);
   _resizeTimer = setTimeout(() => {
-    if (_currentChartRange) {
-      // 重新格式化标签
-      const container = document.querySelector('.chart-x-labels');
-      if (container && container.innerHTML !== '') {
-        // 重新获取数据并格式化
-        fetchAndDrawChart(_currentChartRange);
-      }
-    }
+    if (_chartInstance) _chartInstance.resize();
   }, 250);
 });
 
@@ -246,7 +302,6 @@ async function fetchAndDrawChart(range) {
     // 更新今日新增统计
     const todayEl = document.getElementById('statToday');
     if (todayEl) {
-      // today 页签数据日期为小时格式(如 "14:00")，汇总所有小时的 added；其他页签匹配日期字符串
       const isHourly = _currentChartRange === 'today';
       let todayAdded;
       if (isHourly) {
@@ -258,7 +313,6 @@ async function fetchAndDrawChart(range) {
       todayEl.textContent = todayAdded;
     }
 
-    drawChartCurve(data, range);
-    _formatXLabels(data, range);
+    drawEChart(data, range);
   } catch(e) { console.error('[overview] chart error:', e); }
 }

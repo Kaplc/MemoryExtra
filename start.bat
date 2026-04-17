@@ -3,11 +3,10 @@ setlocal enabledelayedexpansion
 
 echo === Memory Manager ===
 
-:: ── 单例：检测旧实例并清理 ────────────────────────────
-echo === Checking for existing instance ===
-if exist "venv312\Scripts\python.exe" (
-    "venv312\Scripts\python.exe" "backend\_boot_helper.py" kill 2>NUL
-)
+:: ── 杀掉占用本项目端口的旧进程 ────────────────────────────
+powershell -ExecutionPolicy Bypass -File "%~dp0kill_ports.ps1"
+
+ping -n 2 127.0.0.1 >NUL 2>&1
 
 :: ── 检查/创建虚拟环境 (Python 3.12) ───────────────────
 echo === Checking Virtual Environment ===
@@ -67,10 +66,12 @@ echo === Getting ports ===
 set /p PORT_RESULT=<"%TEMP%\mem_ports.txt"
 
 :: 去掉可能的额外输出行，只取第一行逗号分隔的数字
-for /f "tokens=1,2,3 delims=," %%a in ("%PORT_RESULT%") do (
+for /f "tokens=1,2,3,4,5 delims=," %%a in ("%PORT_RESULT%") do (
     set "FLASK_PORT=%%a"
     set "QDRANT_HTTP=%%b"
     set "QDRANT_GRPC=%%c"
+    set "EXTRA_PORT1=%%d"
+    set "EXTRA_PORT2=%%e"
 )
 
 echo   Flask Port : %FLASK_PORT%

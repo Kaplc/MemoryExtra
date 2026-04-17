@@ -71,6 +71,7 @@ function drawChartCurve(data, range) {
   const lineTotal = document.getElementById('curveLineTotal');
   const lineAdded = document.getElementById('curveLineAdded');
   const lineUpdated = document.getElementById('curveLineUpdated');
+  const svg = document.getElementById('chartSvg');
 
   if (!lineTotal) return;
 
@@ -78,6 +79,7 @@ function drawChartCurve(data, range) {
     lineTotal.setAttribute('d', '');
     if (lineAdded) lineAdded.setAttribute('d', '');
     if (lineUpdated) lineUpdated.setAttribute('d', '');
+    _clearChartDots();
     _updateYAxis(0);
     return;
   }
@@ -113,7 +115,81 @@ function drawChartCurve(data, range) {
     lineUpdated.setAttribute('d', simpleLinePath(updatedPts));
   }
 
+  // 绘制端点圆点
+  _drawChartDots(totalPts, addedPts, updatedPts, data);
+
   _updateYAxis(maxTotal);
+}
+
+/**
+ * 清除图表端点
+ */
+function _clearChartDots() {
+  const existing = document.querySelectorAll('.chart-dot');
+  existing.forEach(el => el.remove());
+}
+
+/**
+ * 绘制图表端点并绑定悬浮窗
+ * @param {Array<{x:number,y:number}>} totalPts 累计线的端点坐标
+ * @param {Array} data 对应的数据
+ */
+function _drawChartDots(totalPts, data) {
+  const svg = document.getElementById('chartSvg');
+  const tooltip = document.getElementById('chartTooltip');
+  const tooltipDate = document.getElementById('tooltipDate');
+  const tooltipTotal = document.getElementById('tooltipTotal');
+  const tooltipAdded = document.getElementById('tooltipAdded');
+  const tooltipUpdated = document.getElementById('tooltipUpdated');
+  if (!svg || !tooltip || !totalPts || !data) return;
+
+  // 清除旧端点
+  _clearChartDots();
+
+  // 直接用 totalPts 的坐标绘制端点（与曲线端点一致）
+  totalPts.forEach((pt, i) => {
+    const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+    circle.setAttribute('class', 'chart-dot');
+    circle.setAttribute('cx', pt.x);
+    circle.setAttribute('cy', pt.y);
+    circle.setAttribute('r', '3');
+    circle.setAttribute('fill', '#7c3aed');
+    circle.setAttribute('data-index', i);
+    svg.appendChild(circle);
+
+    const d = data[i];
+
+    // 鼠标事件
+    circle.addEventListener('mouseenter', (e) => {
+      tooltipDate.textContent = d.date;
+      tooltipTotal.textContent = d.total ?? '-';
+      tooltipAdded.textContent = d.added ?? '-';
+      tooltipUpdated.textContent = d.updated ?? '-';
+
+      // 计算像素位置
+      const svgRect = svg.getBoundingClientRect();
+      const wrapRect = svg.parentElement.getBoundingClientRect();
+      const scaleX = svgRect.width / 700;
+      const scaleY = svgRect.height / 120;
+      const dotX = pt.x * scaleX;
+      const dotY = pt.y * scaleY;
+
+      let left = dotX + 10;
+      let top = dotY - 40;
+
+      // 边界检测
+      if (left + 130 > wrapRect.width) left = dotX - 140;
+      if (top < 0) top = dotY + 10;
+
+      tooltip.style.left = left + 'px';
+      tooltip.style.top = top + 'px';
+      tooltip.classList.add('visible');
+    });
+
+    circle.addEventListener('mouseleave', () => {
+      tooltip.classList.remove('visible');
+    });
+  });
 }
 
 /**
