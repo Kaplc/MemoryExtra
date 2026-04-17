@@ -68,25 +68,40 @@ def _migrate_existing():
 
 
 def _hit_memory(memory_ids: list):
-    """对指定记忆列表 hit_count++，last_hit_at 更新"""
-    try:
-        client = get_client()
-        now = _now().isoformat()
-        for memory_id in memory_ids:
+    """对指定记忆列表 hit_count++，last_hit_at 更新
+
+    - 记忆库 < 20 条时：静默跳过（兼容首次存入时的 fake id）
+    - 记忆库 >= 20 条时：必须全部是有效 id，否则抛 ValueError
+    """
+    client = get_client()
+    # 检查库记录数
+    info = client.get_collection(settings.collection_name)
+    skip_invalid = info.points_count < 20
+
+    now = _now().isoformat()
+    for memory_id in memory_ids:
+        try:
             existing = client.retrieve(collection_name=settings.collection_name, ids=[memory_id])
-            if not existing:
-                continue
-            current = existing[0].payload
-            client.set_payload(
-                collection_name=settings.collection_name,
-                payload={
-                    "hit_count": current.get("hit_count", 0) + 1,
-                    "last_hit_at": now
-                },
-                points=[memory_id]
-            )
-    except Exception:
-        pass
+        except Exception:
+            # 无效 UUID 格式等错误
+            if skip_invalid:
+                continue  # 库不够20条时静默跳过
+            raise ValueError(f"无效的 memory_id: {memory_id}")
+
+        if not existing:
+            if skip_invalid:
+                continue  # 库不够20条时静默跳过
+            raise ValueError(f"memory_id 不存在: {memory_id}")
+
+        current = existing[0].payload
+        client.set_payload(
+            collection_name=settings.collection_name,
+            payload={
+                "hit_count": current.get("hit_count", 0) + 1,
+                "last_hit_at": now
+            },
+            points=[memory_id]
+        )
 
 
 def _calculate_decay_score(cosine_score, hit_count, last_hit_at, lambda_decay):
