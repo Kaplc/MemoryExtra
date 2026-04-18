@@ -136,6 +136,21 @@ async function loadOverviewPage() {
     if (qCollectionSub) qCollectionSub.textContent = `Collection: ${st.qdrant_collection || 'memories'}`;
     if (qTopKSub) qTopKSub.textContent = `Top-K: ${st.qdrant_top_k || 5}`;
     if (qDimSub) qDimSub.textContent = `维度: ${st.embedding_dim || 1024}`;
+    const qDiskSizeSub = document.getElementById('scQdrantDiskSizeSub');
+    if (qDiskSizeSub) {
+      const diskSize = st.qdrant_disk_size || 0;
+      if (diskSize >= 1024 * 1024 * 1024) {
+        qDiskSizeSub.textContent = `存储: ${(diskSize / (1024 * 1024 * 1024)).toFixed(2)} GB`;
+      } else if (diskSize >= 1024 * 1024) {
+        qDiskSizeSub.textContent = `存储: ${(diskSize / (1024 * 1024)).toFixed(1)} MB`;
+      } else if (diskSize >= 1024) {
+        qDiskSizeSub.textContent = `存储: ${(diskSize / 1024).toFixed(1)} KB`;
+      } else if (diskSize > 0) {
+        qDiskSizeSub.textContent = `存储: ${diskSize} B`;
+      } else {
+        qDiskSizeSub.textContent = `存储: 0 B`;
+      }
+    }
 
     // Device info
     const devSub1 = document.getElementById('scDeviceSub1');

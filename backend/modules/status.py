@@ -34,6 +34,7 @@ def register(app, ready_state, logger, stats_db):
             "qdrant_port": settings.qdrant_port,
             "qdrant_collection": settings.collection_name,
             "qdrant_top_k": settings.top_k,
+            "qdrant_disk_size": _get_qdrant_count(settings).get("disk_size", 0),
         })
 
     @app.route('/system-info', methods=['GET'])
@@ -173,14 +174,29 @@ def _get_model_info():
 
 
 def _get_qdrant_count(settings):
-    """获取 Qdrant 集合中的记忆数量"""
+    """获取 Qdrant 集合中的记忆数量和存储大小"""
     try:
         from qdrant_client import QdrantClient
         client = QdrantClient(host=settings.qdrant_host, port=settings.qdrant_port, check_compatibility=False)
         collection_info = client.get_collection(settings.collection_name)
-        return collection_info.points_count
-    except Exception:
-        return 0
+        count = collection_info.points_count
+        # 通过文件系统获取存储大小
+        storage_path = os.environ.get('QDRANT_STORAGE_PATH', os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), '..', 'storage'))
+        disk_size = 0
+        try:
+            for dirpath, dirnames, filenames in os.walk(storage_path):
+                for f in filenames:
+                    fp = os.path.join(dirpath, f)
+                    disk_size += os.path.getsize(fp)
+        except Exception:
+            pass
+        return {
+            "count": count,
+            "disk_size": disk_size,
+        }
+    except Exception as e:
+        print(f"[debug] _get_qdrant_count error: {e}")
+        return {"count": 0, "disk_size": 0}
 
 
 def _has_nvidia_gpu():
