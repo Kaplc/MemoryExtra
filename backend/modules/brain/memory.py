@@ -197,9 +197,13 @@ def search_memory(query: str) -> list[dict]:
     scored = []
     for r in results.points:
         payload = r.payload
+        text = payload.get("text", "")
+        # 过滤掉"[已整理]"标签的记忆，不参与评分
+        if "[已整理]" in text:
+            continue
         scored.append({
             "id": str(r.id),
-            "text": payload.get("text", ""),
+            "text": text,
             "timestamp": payload.get("timestamp"),
             "score": round(r.score, 4),
             "decay_score": round(_calculate_decay_score(
