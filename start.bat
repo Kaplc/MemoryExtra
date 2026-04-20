@@ -3,8 +3,8 @@ setlocal enabledelayedexpansion
 
 echo === Memory Manager ===
 
-:: ── 杀掉占用本项目端口的旧进程 ────────────────────────────
-powershell -ExecutionPolicy Bypass -File "%~dp0kill_ports.ps1"
+:: ── 杀掉占用本项目端口的旧进程（Python 比 PowerShell 快 10x）────
+"venv312\Scripts\python.exe" "backend\kill_old.py"
 
 ping -n 2 127.0.0.1 >NUL 2>&1
 

@@ -147,6 +147,7 @@ def check_deps():
                 'python-dotenv': 'dotenv',
                 'fastmcp': 'fastmcp',
                 'mcp': 'mcp',
+                'mem0ai': 'mem0',
             }
             imp_name = alias_map.get(pkg, pkg.replace('-', '_'))
             spec = importlib.util.find_spec(imp_name)

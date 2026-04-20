@@ -10,6 +10,8 @@ function onPageLoad() {
   if (_overviewTimer) clearInterval(_overviewTimer);
   _overviewTimer = setInterval(async () => {
     try {
+      // 守卫：overview 页面可能已被切换
+      if (!document.getElementById('scModelValue')) return;
       const st = await fetch(API + '/status').then(r => r.json());
       const modelValue = document.getElementById('scModelValue');
       const modelSub = document.getElementById('scModelSub');
@@ -29,6 +31,8 @@ function onPageLoad() {
   if (_sysInfoTimer) clearInterval(_sysInfoTimer);
   _sysInfoTimer = setInterval(async () => {
     try {
+      // 守卫：overview 页面可能已被切换
+      if (!document.getElementById('scDeviceSub1')) return;
       const sysInfo = await fetchJson(API + '/system-info');
       updateDeviceCard(sysInfo);
     } catch {}
@@ -95,6 +99,9 @@ function updateDeviceCard(sysInfo) {
 }
 
 async function loadOverviewPage() {
+  // 页面切换守卫：如果 overview 容器已不存在，直接返回
+  if (!document.getElementById('chartContainer')) return;
+  
   try {
     const [cfg, st, sysInfo] = await Promise.all([
       fetchJson(API + '/settings'),
@@ -305,20 +312,21 @@ window.addEventListener('resize', () => {
 async function fetchAndDrawChart(range) {
   try {
     const res = await fetchJson(API + '/chart-data?range=' + range);
+    // 页面切换守卫：DOM 已被替换则跳过
+    if (!document.getElementById('chartContainer')) return;
     const data = res.data || [];
 
-    // 更新今日新增统计
-    const todayEl = document.getElementById('statToday');
-    if (todayEl) {
-      const isHourly = _currentChartRange === 'today';
-      let todayAdded;
-      if (isHourly) {
-        todayAdded = data.reduce((sum, d) => sum + (d.added || 0), 0);
-      } else {
-        const todayStr = new Date().toISOString().slice(0, 10);
-        todayAdded = (data.find(d => d.date === todayStr)?.added) || 0;
-      }
-      todayEl.textContent = todayAdded;
+    // 更新时间段累计统计
+    const statEl = document.getElementById('statToday');
+    const statLabel = document.getElementById('statLabel');
+    if (statEl) {
+      // 累加当前时间范围内的所有新增数
+      const rangeAdded = data.reduce((sum, d) => sum + (d.added || 0), 0);
+      statEl.textContent = rangeAdded;
+    }
+    if (statLabel) {
+      const labels = { 'today': '24h累计', 'week': '7天累计', 'month': '30天累计', 'all': '全部累计' };
+      statLabel.textContent = labels[range] || '累计';
     }
 
     drawEChart(data, range);

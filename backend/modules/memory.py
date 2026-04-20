@@ -9,25 +9,18 @@ from modules.brain.memory import (
 
 def register(app, stats_db):
     import threading
+
     @app.route('/store', methods=['POST'])
     def store():
         data = request.get_json()
         text = (data or {}).get('text', '').strip()
-        hit_ids = (data or {}).get('hit_ids', [])
         if not text:
             return jsonify({"error": "内容不能为空"})
-        # 检查当前已有记忆数量，20条以内允许 hit_ids 为空
-        from modules.brain.memory import get_client
-        from brain_mcp.config import settings as brain_settings
-        client = get_client()
-        total = client.count(collection_name=brain_settings.collection_name, exact=True).count
-        if total >= 20 and not hit_ids:
-            return jsonify({"error": "已有记忆达到20条，往后每次保存都需要引用已有记忆ID（hit_ids）"})
         try:
-            result = store_memory(text, hit_ids=hit_ids or [])
+            result = store_memory(text)
             stats_db.record_action(added=1)
             stats_db.append_stream('store', content=text)
-            return jsonify({"result": result})
+            return jsonify(result)
         except Exception as e:
             return jsonify({"error": str(e)})
 
@@ -62,13 +55,9 @@ def register(app, stats_db):
         if not memory_id:
             return jsonify({"error": "缺少 memory_id"})
         try:
-            # 先查内容再删除
-            from modules.brain.memory import list_memories
-            mems = list_memories()
-            content = next((m['text'] for m in mems if m['id'] == memory_id), None)
             result = delete_memory(memory_id)
             stats_db.record_action(deleted=1)
-            stats_db.append_stream('delete', memory_id=memory_id, content=content)
+            stats_db.append_stream('delete', memory_id=memory_id)
             return jsonify({"result": result})
         except Exception as e:
             return jsonify({"error": str(e)})
@@ -100,13 +89,12 @@ def register(app, stats_db):
         if not new_text:
             return jsonify({"error": "新内容不能为空"})
         try:
-            # 后台异步执行，不阻塞
             def _do_update():
                 try:
                     update_memory(memory_id, new_text)
                     stats_db.append_stream('update', content=new_text, memory_id=memory_id)
                 except Exception:
-                    pass  # 后台任务，忽略错误
+                    pass
             threading.Thread(target=_do_update, daemon=True).start()
             return jsonify({"result": "更新已提交后台"})
         except Exception as e:

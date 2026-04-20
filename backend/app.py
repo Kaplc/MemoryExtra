@@ -67,6 +67,11 @@ reg_stream(app, stats_db)
 
 # ── 其他路由 ───────────────────────────────────────────────
 
+@app.route('/health')
+def health():
+    return jsonify({"status": "ok"})
+
+
 @app.route('/')
 def index():
     return app.send_static_file('index.html')
@@ -115,12 +120,23 @@ def _preload():
         except Exception as e:
             logger.error(f"Failed to sync qdrant count: {e}")
 
-        # 启动后台遗忘清理
+    # 初始化 mem0 客户端
         try:
-            from modules.brain.memory import start_cleanup_loop
-            start_cleanup_loop()
+            from modules.brain.mem0_adapter import get_mem0_client
+            get_mem0_client()
+            logger.info("mem0 client initialized successfully")
         except Exception as e:
-            logger.warning(f"Cleanup loop failed to start: {e}")
+            logger.warning(f"mem0 initialization failed (non-fatal): {e}")
+
+        # 自动迁移旧记忆
+        try:
+            from modules.brain.migrate import needs_migration, migrate_old_memories
+            if needs_migration(_PROJECT_ROOT):
+                result = migrate_old_memories(_PROJECT_ROOT)
+                if result["error"]:
+                    logger.warning(f"Migration error: {result['error']}")
+        except Exception as e:
+            logger.warning(f"Migration check failed (non-fatal): {e}")
 
     device_setting = settings_mgr.load().get("device", "cpu")
     model_mgr.load(device_setting)
