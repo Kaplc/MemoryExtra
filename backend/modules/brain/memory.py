@@ -7,7 +7,7 @@ import logging
 
 from modules.brain.mem0_adapter import get_mem0_client
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger('memory')
 
 # 默认 user_id，mem0 需要至少一个 entity id
 DEFAULT_USER_ID = "default"
@@ -65,7 +65,12 @@ def store_memory(text: str) -> dict:
             infer=False,
         )
 
+    # 完整日志：记录 mem0 返回的原始结果
+    logger.info(f"[store_memory] mem0 raw result: {result}")
+    logger.info(f"[store_memory] input text: {text}")
+
     events = result.get("results", [])
+
     added = [e["memory"] for e in events if e.get("event") == "ADD"]
     updated = [e["memory"] for e in events if e.get("event") == "UPDATE"]
 

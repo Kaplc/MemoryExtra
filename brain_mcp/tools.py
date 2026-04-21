@@ -40,7 +40,8 @@ def store_memory(text: str) -> str:
     texts = result.get("stored_texts", [])
     if texts:
         return f"已记住:\n" + "\n".join(f"  • {t}" for t in texts)
-    return result.get("result", "已记住")
+    # stored_texts为空时返回原始输入文本
+    return f"已记住:\n  • {text}"
 
 
 def search_memory(query: str) -> list[dict]:

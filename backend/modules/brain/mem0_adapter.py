@@ -151,15 +151,16 @@ def _create_client():
         "model": llm_model,
         "api_key": api_key,
     }
-    # base_url 用于第三方代理（通过环境变量传入，mem0 config 不直接支持）
+    # base_url 用于第三方代理
     if cfg.get("base_url"):
         if provider == "openai":
             os.environ["OPENAI_BASE_URL"] = cfg["base_url"]
         elif provider == "anthropic":
             os.environ["ANTHROPIC_BASE_URL"] = cfg["base_url"]
-        # 其他 provider 也可以通过环境变量设置
+        elif provider == "minimax":
+            os.environ["MINIMAX_API_BASE"] = cfg["base_url"]
         else:
-            llm_config.setdefault("extra_body", {})  # 部分支持 extra body 参数的 provider
+            llm_config.setdefault("extra_body", {})
 
     # 修复 mem0 Anthropic LLM 的 ThinkingBlock 兼容性问题
     # MiniMax-M2.7 等模型返回 thinking block，mem0 假设第一个 block 是 TextBlock

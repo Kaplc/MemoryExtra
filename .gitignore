@@ -46,3 +46,4 @@ test-results/
 models.zip
 backend/qdrant/config/config.yaml
 .claude/settings.local.json
+.mem0_migrated
