@@ -60,19 +60,14 @@ async function loadAll() {
 }
 
 async function updateStats() {
-  // 总数从 /memory-count 获取（Qdrant 真实数量）
   try {
     const cntRes = await fetchJson(API + '/memory-count');
     const el = document.getElementById('totalCount');
-    if (el) el.textContent = (cntRes.count || 0);
+    if (el) el.textContent = cntRes.count || 0;
   } catch(e) {
     const el = document.getElementById('totalCount');
     if (el) el.textContent = allMemories.length;
   }
-  const today = new Date().toISOString().slice(0, 10);
-  const cnt = allMemories.filter(m => (m.timestamp || '').startsWith(today)).length;
-  const el = document.getElementById('todayCount');
-  if (el) el.textContent = cnt;
 }
 
 async function deleteMemory(id) {
