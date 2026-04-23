@@ -88,21 +88,6 @@ function updateStatusUI(d) {
     const map = {cuda: 'GPU', cpu: 'CPU'};
     sbDevice.textContent = map[d.device] || d.device || 'CPU';
   }
-
-  // DB 状态
-  fetch(API + '/db-status').then(r => r.json()).then(d => {
-    const dbDot = document.getElementById('sbDbDot');
-    const dbText = document.getElementById('sbDbText');
-    if (dbDot && dbText) {
-      if (d.ok) {
-        dbDot.className = 'statusbar-dot ok';
-        dbText.textContent = `DB ${d.records}条`;
-      } else {
-        dbDot.className = 'statusbar-dot err';
-        dbText.textContent = 'DB ERR';
-      }
-    }
-  }).catch(() => {});
 }
 
 // ── 状态检查轮询 ────────────────────────────────────────────
