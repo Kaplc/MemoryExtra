@@ -62,6 +62,15 @@ class StatsDB:
     def record_action(self, added=0, deleted=0):
         """记录今天的操作（快捷方法）"""
         self.update(_dt.date.today().isoformat(), added_delta=added, deleted_delta=deleted)
+        self.prune_old_stats(keep_days=30)
+
+    def prune_old_stats(self, keep_days=30):
+        """删除 keep_days 天之前的旧数据（保留最近的数据）"""
+        db = self._get_conn()
+        cutoff = (_dt.date.today() - _dt.timedelta(days=keep_days)).isoformat()
+        db.execute('DELETE FROM daily_stats WHERE date < ?', (cutoff,))
+        db.commit()
+        db.close()
 
     def query_range(self, start_date=None):
         """查询范围内的数据，按 date 排序"""
@@ -102,24 +111,52 @@ class StatsDB:
         db.commit()
         rowid = db.execute('SELECT last_insert_rowid()').fetchone()[0]
         db.close()
+
+        # 写入后自动裁剪该 action 的旧记录（保留 30 条）
+        self.trim_stream(action, keep=30)
+
         return rowid
 
-    def query_stream(self, limit=50):
+    def query_stream(self, action=None, limit=50):
         """查询最近的操作流，最新的在前面"""
         db = self._get_conn()
-        rows = db.execute(
-            'SELECT id, action, content, memory_id, created_at FROM stream ORDER BY id DESC LIMIT ?',
-            (limit,)
-        ).fetchall()
+        if action:
+            rows = db.execute(
+                'SELECT id, action, content, memory_id, created_at FROM stream WHERE action=? ORDER BY id DESC LIMIT ?',
+                (action, limit)
+            ).fetchall()
+        else:
+            rows = db.execute(
+                'SELECT id, action, content, memory_id, created_at FROM stream ORDER BY id DESC LIMIT ?',
+                (limit,)
+            ).fetchall()
         db.close()
         return [dict(r) for r in rows]
 
-    def stream_count(self):
+    def stream_count(self, action=None):
         """流记录总数"""
         db = self._get_conn()
-        cnt = db.execute('SELECT COUNT(*) as c FROM stream').fetchone()[0]
+        if action:
+            cnt = db.execute('SELECT COUNT(*) as c FROM stream WHERE action=?', (action,)).fetchone()[0]
+        else:
+            cnt = db.execute('SELECT COUNT(*) as c FROM stream').fetchone()[0]
         db.close()
         return cnt
+
+    def trim_stream(self, action, keep=30):
+        """每个 action 只保留最近 keep 条记录"""
+        db = self._get_conn()
+        # 先查该 action 的总条数
+        total = db.execute('SELECT COUNT(*) as c FROM stream WHERE action=?', (action,)).fetchone()[0]
+        if total > keep:
+            # 删除多余的旧记录（保留 id 最大的 keep 条）
+            db.execute(f'''
+                DELETE FROM stream WHERE action=? AND id NOT IN (
+                    SELECT id FROM stream WHERE action=? ORDER BY id DESC LIMIT ?
+                )
+            ''', (action, action, keep))
+            db.commit()
+        db.close()
 
     def get_memory_count(self):
         """获取记忆总数（所有日期的 added - deleted 总和）"""
