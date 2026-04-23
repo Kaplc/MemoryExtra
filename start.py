@@ -67,7 +67,7 @@ def main():
     result = run([VENV_PY, boot_helper, "deps"])
     if result.returncode != 0:
         print("  Installing dependencies...")
-        req_file = os.path.join(BACKEND_DIR, "requirements.txt")
+        req_file = os.path.join(BASE_DIR, "requirements.txt")
         subprocess.run([VENV_PY, "-m", "pip", "install", "-r", req_file], cwd=BASE_DIR)
 
     # 4. 获取端口
@@ -79,7 +79,7 @@ def main():
 
     # 5. 生成 Qdrant 配置
     print("\n[5/5] Generating Qdrant config...")
-    qdrant_config_dir = os.path.join(BACKEND_DIR, "qdrant", "config")
+    qdrant_config_dir = os.path.join(BASE_DIR, "qdrant", "config")
     os.makedirs(qdrant_config_dir, exist_ok=True)
     qdrant_config = os.path.join(qdrant_config_dir, "config.yaml")
     with open(qdrant_config, "w") as f:
@@ -89,17 +89,17 @@ def main():
   grpc_port: {qdrant_grpc}
 
 storage:
-  storage_path: ./storage
+  storage_path: ./qdrant/storage
 """)
     print(f"  Config written to {qdrant_config}")
 
     # 6. 启动 Qdrant
     print("\n[6/6] Starting Qdrant...")
-    qdrant_exe = os.path.join(BACKEND_DIR, "qdrant", "qdrant.exe")
+    qdrant_exe = os.path.join(BASE_DIR, "qdrant", "qdrant.exe")
     if os.path.exists(qdrant_exe):
         subprocess.Popen(
             [qdrant_exe, "--config-path", qdrant_config],
-            cwd=BACKEND_DIR,
+            cwd=BASE_DIR,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
             start_new_session=True,

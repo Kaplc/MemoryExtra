@@ -51,7 +51,7 @@ echo === Checking Dependencies ===
 if %ERRORLEVEL% neq 0 (
     echo Missing dependencies detected, installing...
     echo This may take a few minutes on first run...
-    call "venv312\Scripts\pip.exe" install -r "backend\requirements.txt" 2>NUL
+    call "venv312\Scripts\pip.exe" install -r "requirements.txt" 2>NUL
     :: 验证所有包是否安装成功（忽略 pip 升级提示导致的非零退出码）
     "venv312\Scripts\python.exe" "backend\_boot_helper.py" deps 2>NUL
     if %ERRORLEVEL% neq 0 (
@@ -90,8 +90,8 @@ echo   http_port: %QDRANT_HTTP%
 echo   grpc_port: %QDRANT_GRPC%
 echo.
 echo storage:
-echo   storage_path: ./storage
-) > "backend\qdrant\config\config.yaml"
+echo   storage_path: ./qdrant/storage
+) > "qdrant\config\config.yaml"
 
 :: ── 启动 Qdrant ─────────────────────────────────────────
 echo === Starting Qdrant ===
@@ -99,7 +99,7 @@ netstat -ano 2>NUL | findstr ":%QDRANT_HTTP%.*LISTENING" >NUL
 if %ERRORLEVEL% == 0 (
     echo Qdrant already running on port %QDRANT_HTTP%.
 ) else (
-    start "" /MIN "backend\qdrant\qdrant.exe" --config-path "backend\qdrant\config\config.yaml"
+    start "" /MIN "qdrant\qdrant.exe" --config-path "qdrant\config\config.yaml"
     echo Qdrant started on port %QDRANT_HTTP%, waiting for it to be ready...
     :: 通过 HTTP API 等待 Qdrant 完全就绪（最多 60 秒）
     set "QDRANT_WAIT=0"

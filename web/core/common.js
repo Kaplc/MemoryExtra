@@ -2,6 +2,14 @@
 
 const API = window.location.origin;
 
+// ── 全局 F5 刷新支持（PyWebView 默认不支持）────────
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'F5' || (e.ctrlKey && e.key === 'r')) {
+    e.preventDefault();
+    location.reload();
+  }
+});
+
 /**
  * 带重试的 JSON fetch
  */

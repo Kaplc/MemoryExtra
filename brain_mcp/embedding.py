@@ -11,9 +11,27 @@ _model_name = None
 
 
 def get_model_name():
-    """Get the currently configured model name."""
+    """Get the currently configured model name.
+    If the configured name is not an absolute path, try to resolve to local models/ directory.
+    """
+    import os
     from .config import settings
-    return settings.embedding_model
+    name = settings.embedding_model
+
+    # 如果已经是绝对路径且存在，直接返回
+    if os.path.isabs(name) and os.path.isdir(name):
+        return name
+
+    # 尝试解析为项目 models/ 目录下的本地路径
+    # brain_mcp/ 的上一级是项目根
+    project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+    # BAAI/bge-m3 → bge-m3
+    short_name = name.split("/")[-1] if "/" in name else name
+    local_path = os.path.join(project_root, "models", short_name)
+    if os.path.isdir(local_path):
+        return local_path
+
+    return name
 
 
 def get_embedding_dim():

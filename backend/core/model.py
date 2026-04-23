@@ -17,6 +17,13 @@ class ModelManager:
             device_setting = self._settings.load().get("device", "cpu")
 
         device = resolve_device(device_setting)
+
+        # 如果模型已加载且设备一致，跳过重复加载
+        if emb._model is not None and self._ready.get("device") == device:
+            self._ready["model"] = True
+            self._logger.info(f"Model already loaded on {device}, skipping")
+            return
+
         self._logger.info(f"Loading model on device: {device} (setting={device_setting})")
 
         self._ready["model"] = False

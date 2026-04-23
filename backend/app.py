@@ -23,7 +23,7 @@ _QDRANT_HTTP_PORT = int(os.environ.get('QDRANT_HTTP_PORT', '6333'))
 
 os.environ.setdefault('QDRANT_EMBEDDING_MODEL', os.path.join(_PROJECT_ROOT, 'models', 'bge-m3'))
 os.environ.setdefault('QDRANT_EMBEDDING_DIM', '1024')
-os.environ.setdefault('QDRANT_EXE_PATH', os.path.join(_BASE, 'qdrant', 'qdrant.exe'))
+os.environ.setdefault('QDRANT_EXE_PATH', os.path.join(_PROJECT_ROOT, 'qdrant', 'qdrant.exe'))
 os.environ.setdefault('FORCE_CPU', '0')
 
 from flask import Flask, request, jsonify
@@ -63,6 +63,9 @@ reg_stats(app, stats_db)
 
 from modules.stream import register as reg_stream
 reg_stream(app, stats_db)
+
+from modules.wiki_mod import register as reg_wiki
+reg_wiki(app, stats_db)
 
 
 # ── 其他路由 ───────────────────────────────────────────────
@@ -140,6 +143,14 @@ def _preload():
 
     device_setting = settings_mgr.load().get("device", "cpu")
     model_mgr.load(device_setting)
+
+    # 预加载 LightRAG 引擎（避免首次搜索请求时才初始化）
+    try:
+        from rag.lightrag_wiki.rag_engine import get_rag
+        get_rag()
+        logger.info("LightRAG preloaded successfully")
+    except Exception as e:
+        logger.warning(f"LightRAG preload failed (will lazy-init on first search): {e}")
 
 
 threading.Thread(target=_preload, daemon=True).start()

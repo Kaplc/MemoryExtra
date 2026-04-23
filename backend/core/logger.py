@@ -24,9 +24,13 @@ def setup_logger(project_root):
     formatter = logging.Formatter('[%(asctime)s] [%(levelname)s] %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
     handler.setFormatter(formatter)
 
+    # handler 挂到 root logger，所有模块（wiki_mod、brain_mcp 等）的日志都能写入文件
+    root_log = logging.getLogger()
+    root_log.setLevel(logging.INFO)
+    root_log.addHandler(handler)
+
     log = logging.getLogger('memory')
     log.setLevel(logging.INFO)
-    log.addHandler(handler)
     # 静默 werkzeug 日志
     logging.getLogger('werkzeug').setLevel(logging.ERROR)
 

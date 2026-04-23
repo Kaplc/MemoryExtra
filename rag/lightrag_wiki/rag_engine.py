@@ -1,0 +1,284 @@
+"""
+LightRAG 引擎 - 初始化、Embedding/LLM 适配、查询/插入
+LLM 配置优先级：wiki.json 的 llm 字段 > mem0.json（fallback）
+支持 OpenAI 兼容接口 / Anthropic 原生接口 / Ollama
+"""
+import os
+import json
+import asyncio
+import logging
+import functools
+import re
+import numpy as np
+
+logger = logging.getLogger(__name__)
+
+_rag_instance = None
+
+
+def _run_async(coro):
+    """在同步上下文中运行异步协程"""
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        loop = None
+
+    if loop and loop.is_running():
+        import concurrent.futures
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+            return pool.submit(asyncio.run, coro).result()
+    else:
+        return asyncio.run(coro)
+
+
+def _load_llm_config() -> dict:
+    """加载 LLM 配置。优先 wiki.json 的 llm 字段，api_key 可从 mem0.json 继承"""
+    from .config import load_wiki_config
+
+    wiki_cfg = load_wiki_config()
+    llm_cfg = wiki_cfg.get("llm", {})
+
+    # 读取 mem0.json（用于 fallback 或继承 api_key）
+    mem0_cfg = {}
+    mem0_path = os.path.join(os.path.expanduser("~"), ".aibrain", "config", "mem0.json")
+    if os.path.exists(mem0_path):
+        with open(mem0_path, "r", encoding="utf-8") as f:
+            mem0_cfg = json.load(f)
+
+    # wiki.json 有 provider 配置时，优先使用
+    if llm_cfg.get("provider"):
+        # api_key：wiki.json > mem0.json
+        api_key = llm_cfg.get("api_key") or mem0_cfg.get("api_key", "")
+        return {
+            "llm_provider": llm_cfg["provider"],
+            "llm_model": llm_cfg.get("model", ""),
+            "api_key": api_key,
+            "base_url": llm_cfg.get("base_url", ""),
+        }
+
+    # 完全没配置 wiki llm，fallback 到 mem0.json
+    if mem0_cfg:
+        return mem0_cfg
+
+    raise RuntimeError(
+        "未找到 LLM 配置。请在 ~/.aibrain/config/wiki.json 的 llm 字段中配置，"
+        "或在 ~/.aibrain/config/mem0.json 中配置。"
+    )
+
+
+async def _bge_m3_embed(texts: list[str]) -> np.ndarray:
+    """异步 Embedding 函数，复用 brain_mcp 的 BGE-M3"""
+    from brain_mcp.embedding import encode_texts
+    embeddings = encode_texts(texts)
+    return np.array(embeddings)
+
+
+def _strip_think_tags(text: str) -> str:
+    """去掉推理模型的 <think>...</think> 前缀"""
+    if "<think>" in text:
+        return re.sub(r"<think>.*?</think>\s*", "", text, flags=re.DOTALL)
+    return text
+
+
+def _build_llm_func(cfg: dict):
+    """根据配置构建 LightRAG 兼容的 LLM 函数
+
+    LightRAG 调用签名: llm_model_func(prompt, system_prompt=..., **kwargs)
+    """
+    provider = cfg.get("llm_provider", "openai").lower()
+    model = cfg.get("llm_model", "gpt-4o-mini")
+    api_key = cfg.get("api_key", "")
+    base_url = cfg.get("base_url", "")
+
+    # === Ollama ===
+    if provider == "ollama":
+        from lightrag.llm.ollama import ollama_model_complete
+        return functools.partial(
+            ollama_model_complete,
+            model=model,
+            host=base_url or "http://localhost:11434",
+        )
+
+    # === Anthropic 原生接口 ===
+    if provider == "anthropic":
+        # 默认模型
+        if not model:
+            model = "claude-sonnet-4-20250514"
+
+        async def anthropic_wrapper(prompt, system_prompt=None, **kwargs):
+            import time as _time
+            kwargs.pop("response_format", None)
+            kwargs.pop("hashing_kv", None)
+            kwargs.pop("keyword_extraction", None)
+
+            t0 = _time.time()
+            prompt_len = len(prompt) if prompt else 0
+            sys_len = len(system_prompt) if system_prompt else 0
+            logger.info(f"[LLM] anthropic 调用开始 model={model} prompt={prompt_len}chars sys_prompt={sys_len}chars")
+
+            try:
+                import anthropic
+                client = anthropic.AsyncAnthropic(
+                    api_key=api_key,
+                    **({"base_url": base_url} if base_url else {}),
+                )
+                messages = [{"role": "user", "content": prompt}]
+                params = {
+                    "model": model,
+                    "max_tokens": kwargs.pop("max_tokens", 4096),
+                    "messages": messages,
+                }
+                if system_prompt:
+                    params["system"] = system_prompt
+
+                t1 = _time.time()
+                response = await client.messages.create(**params)
+                t2 = _time.time()
+                result_len = sum(len(b.text) for b in response.content if hasattr(b, "text"))
+
+                # 过滤掉 ThinkingBlock，只取 TextBlock
+                texts = []
+                for block in response.content:
+                    if hasattr(block, "type") and block.type == "text":
+                        texts.append(block.text)
+                result = "\n".join(texts) or ""
+
+                elapsed_total = t2 - t0
+                elapsed_api = t2 - t1
+                logger.info(f"[LLM] anthropic 完成 total={elapsed_total:.1f}s api_wait={elapsed_api:.1f}s result={result_len}chars")
+                return _strip_think_tags(result)
+            except Exception as e:
+                logger.error(f"Anthropic API 调用失败: {e}")
+                raise
+
+        return anthropic_wrapper
+
+    # === OpenAI 兼容接口（OpenAI / DeepSeek / MiniMax / Groq 等）===
+    from lightrag.llm.openai import openai_complete_if_cache
+
+    if not base_url:
+        provider_urls = {
+            "deepseek": "https://api.deepseek.com/v1",
+            "groq": "https://api.groq.com/openai/v1",
+            "together": "https://api.together.xyz/v1",
+            "xai": "https://api.x.ai/v1",
+        }
+        base_url = provider_urls.get(provider)
+
+    _model = model
+    _api_key = api_key
+    _base_url = base_url
+
+    async def openai_wrapper(prompt, system_prompt=None, **kwargs):
+        import time as _time
+        t0 = _time.time()
+        prompt_len = len(prompt) if prompt else 0
+        logger.info(f"[LLM] openai 调用开始 model={_model} prompt={prompt_len}chars base_url={_base_url}")
+
+        kw = {"api_key": _api_key}
+        if _base_url:
+            kw["base_url"] = _base_url
+        kwargs.pop("response_format", None)
+        kw.update(kwargs)
+        result = await openai_complete_if_cache(
+            _model, prompt, system_prompt=system_prompt, **kw
+        )
+        result_len = len(result) if isinstance(result, str) else 0
+        logger.info(f"[LLM] openai 完成 total={_time.time()-t0:.1f}s result={result_len}chars")
+        return _strip_think_tags(result) if isinstance(result, str) else result
+
+    return openai_wrapper
+
+
+def _build_embedding_func():
+    """构建 LightRAG 的 EmbeddingFunc，复用 BGE-M3"""
+    from lightrag.utils import EmbeddingFunc
+
+    return EmbeddingFunc(
+        embedding_dim=1024,
+        max_token_size=8192,
+        func=_bge_m3_embed,
+    )
+
+
+def get_rag():
+    """单例获取 LightRAG 实例（懒初始化）"""
+    global _rag_instance
+    if _rag_instance is None:
+        _rag_instance = _create_rag()
+    return _rag_instance
+
+
+def _create_rag():
+    """创建 LightRAG 实例"""
+    from lightrag import LightRAG
+    from .config import load_wiki_config, get_lightrag_dir
+
+    cfg = load_wiki_config()
+    llm_cfg = _load_llm_config()
+    lightrag_dir = get_lightrag_dir()
+
+    os.makedirs(lightrag_dir, exist_ok=True)
+
+    rag = LightRAG(
+        working_dir=lightrag_dir,
+        embedding_func=_build_embedding_func(),
+        llm_model_func=_build_llm_func(llm_cfg),
+        llm_model_name=llm_cfg.get("llm_model", "gpt-4o-mini"),
+        chunk_token_size=cfg.get("chunk_token_size", 1200),
+        chunk_overlap_token_size=100,
+        addon_params={
+            "language": cfg.get("language", "Chinese"),
+        },
+        vector_storage="NanoVectorDBStorage",
+        graph_storage="NetworkXStorage",
+    )
+
+    _run_async(rag.initialize_storages())
+
+    logger.info(
+        f"LightRAG 初始化完成 (working_dir={lightrag_dir}, "
+        f"provider={llm_cfg.get('llm_provider')}, "
+        f"model={llm_cfg.get('llm_model')}, "
+        f"language={cfg.get('language', 'Chinese')})"
+    )
+    return rag
+
+
+def insert_document(text: str, file_path: str | None = None) -> str:
+    """插入文档到 LightRAG 索引"""
+    rag = get_rag()
+    kwargs = {"input": text}
+    if file_path:
+        kwargs["file_paths"] = file_path
+    return rag.insert(**kwargs)
+
+
+def query_wiki_context(question: str, mode: str = "hybrid") -> str:
+    """查询 wiki，仅返回检索到的上下文（不经过 LLM 生成）"""
+    from lightrag.base import QueryParam
+
+    rag = get_rag()
+    valid_modes = ("naive", "local", "global", "hybrid", "mix")
+    if mode not in valid_modes:
+        mode = "hybrid"
+
+    param = QueryParam(mode=mode, only_need_context=True)
+    return rag.query(question, param=param)
+
+
+def delete_document(doc_id: str) -> dict:
+    """删除文档及其关联的知识图谱数据"""
+    rag = get_rag()
+    result = rag.delete_by_doc_id(doc_id)
+    return {
+        "status": result.status,
+        "doc_id": result.doc_id,
+        "message": result.message,
+    }
+
+
+def reset_rag():
+    """重置 RAG 实例（配置变更后调用）"""
+    global _rag_instance
+    _rag_instance = None

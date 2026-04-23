@@ -49,8 +49,6 @@ def register(app, ready_state, logger, stats_db):
             "os_version": platform.version(),
             "python_version": platform.python_version(),
         }
-        logger.info(f"[system-info] CPU={info['cpu_percent']}% MEM={info['memory_used']/1024**3:.1f}/{info['memory_total']/1024**3:.1f}GB OS={info['platform']}")
-
         # pynvml (NVIDIA)
         if torch.cuda.is_available():
             try:
@@ -178,8 +176,10 @@ def _get_qdrant_count(settings):
     try:
         from qdrant_client import QdrantClient
         client = QdrantClient(host=settings.qdrant_host, port=settings.qdrant_port, check_compatibility=False)
+
         collection_info = client.get_collection(settings.collection_name)
         count = collection_info.points_count
+
         # 通过文件系统获取存储大小（storage 在项目根目录）
         project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
         storage_path = os.path.join(project_root, 'storage')

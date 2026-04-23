@@ -44,8 +44,8 @@ body {
 .nav-item:hover { background: #1e293b; color: #94a3b8; }
 .nav-item.active { background: #7c3aed22; color: #a78bfa; }
 .nav-label { font-weight: 600; }
-.main-content { flex: 1; overflow-y: auto; display: flex; flex-direction: column; }
-#page-content { flex: 1; min-height: 0; }
+.main-content { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+#page-content { flex: 1; min-height: 0; overflow-y: auto; }
 .statusbar { height: 28px; background: #1a1d27; border-top: 1px solid #2d3149; display: flex; align-items: center; justify-content: flex-end; gap: 16px; padding: 0 16px; font-size: 11px; color: #64748b; flex-shrink: 0; }
 .statusbar-item { display: flex; align-items: center; gap: 5px; }
 .statusbar-dot { width: 6px; height: 6px; border-radius: 50%; }
@@ -80,6 +80,9 @@ body {
       </button>
       <button class="nav-item" data-page="steam" onclick="loadPage('steam')">
         <span class="nav-label">流</span>
+      </button>
+      <button class="nav-item" data-page="wiki" onclick="loadPage('wiki')">
+        <span class="nav-label">Wiki</span>
       </button>
       <button class="nav-item" data-page="settings" onclick="loadPage('settings')">
         <span class="nav-label">设置</span>

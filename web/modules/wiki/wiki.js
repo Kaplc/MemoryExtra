@@ -1,0 +1,243 @@
+/* Wiki 状态页面 */
+
+let _wikiFiles = [];
+let _sortKey = 'modified';
+let _sortAsc = false;
+
+function escHtml(s) {
+  return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+function escAttr(s) {
+  return String(s || '').replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+function onPageLoad() {
+  loadWikiData();
+}
+
+function switchTab(tab) {
+  document.querySelectorAll('.tab-btn').forEach(function(btn) {
+    btn.classList.toggle('active', btn.dataset.tab === tab);
+  });
+  document.querySelectorAll('.tab-panel').forEach(function(panel) {
+    panel.classList.toggle('active', panel.id === 'panel' + tab.charAt(0).toUpperCase() + tab.slice(1));
+  });
+  if (tab === 'log') {
+    var wrap = document.getElementById('wikiLogWrap');
+    if (wrap && !wrap.dataset.loaded) {
+      loadLog();
+      wrap.dataset.loaded = '1';
+    }
+  }
+}
+
+async function loadWikiData() {
+  var wrap = document.getElementById('wikiTableWrap');
+  if (wrap) wrap.innerHTML = '<div class="mini-loading"></div>';
+  document.getElementById('indexResult').innerHTML = '';
+
+  try {
+    var data = await fetchJson(API + '/wiki/list');
+    _wikiFiles = Array.isArray(data.files) ? data.files : [];
+
+    document.getElementById('wikiFileCount').textContent = _wikiFiles.length;
+
+    var totalBytes = 0;
+    _wikiFiles.forEach(function(f) { totalBytes += f.size_bytes || 0; });
+    document.getElementById('wikiTotalSize').textContent = formatSize(totalBytes);
+    document.getElementById('wikiSizeSub').textContent = _wikiFiles.length + ' 个 .md 文件';
+
+    if (_wikiFiles.length === 0) {
+      document.getElementById('wikiFileCount').textContent = '0';
+      wrap.innerHTML = '<div class="empty-state">Wiki 目录为空</div>';
+      return;
+    }
+
+    renderTable(_wikiFiles);
+    document.getElementById('wikiFileListMeta').textContent = _wikiFiles.length + ' 个文件';
+    document.getElementById('wikiStatus').textContent = '就绪';
+    document.getElementById('wikiStatus').style.color = '#86efac';
+  } catch (e) {
+    console.error('[wiki] loadWikiData error:', e);
+    var w2 = document.getElementById('wikiTableWrap');
+    if (w2) w2.innerHTML = '<div class="empty-state">加载失败，请检查后端连接</div>';
+    document.getElementById('wikiStatus').textContent = '异常';
+    document.getElementById('wikiStatus').style.color = '#fca5a5';
+  }
+}
+
+async function loadLog() {
+  var wrap = document.getElementById('wikiLogWrap');
+  if (wrap) wrap.innerHTML = '<div class="mini-loading"></div>';
+
+  try {
+    var data = await fetchJson(API + '/wiki/log?lines=200', 3);
+    if (!data.lines) {
+      wrap.innerHTML = '<div class="empty-state">' + (data.error || '无日志') + '</div>';
+      return;
+    }
+
+    var metaEl = document.getElementById('wikiLogMeta');
+    if (metaEl && data.file) {
+      metaEl.textContent = data.file + ' | 共 ' + data.total_relevant + ' 条，显示 ' + data.returned + ' 条';
+    }
+
+    var html = '';
+    data.lines.forEach(function(line) {
+      var cls = '';
+      var display = escHtml(line);
+
+      var m = line.match(/^\[([^\]]+)\]\s+\[(INFO|WARNING|ERROR|WARN)\]/i);
+      if (m) {
+        var lvl = m[2].toLowerCase();
+        if (lvl.indexOf('error') >= 0) cls = 'log-level-error';
+        else if (lvl.indexOf('warn') >= 0) cls = 'log-level-warn';
+        else cls = 'log-level-info';
+        display = '<span class="log-time">' + escHtml(m[1]) + '</span> <span class="' + cls + '">[' + m[2] + ']</span>' + escHtml(line.substring(m[0].length));
+      } else if (/^\d{4}-\d{2}\/\d{2}\//.test(line)) {
+        cls = 'log-level-info';
+      } else if (/(?:error|fail|Exception)/i.test(line)) {
+        cls = 'log-level-error';
+      } else if (/warn|timeout|降级/i.test(line)) {
+        cls = 'log-level-warn';
+      } else if (/\[(RAG|API)[→←⚠✗]\]/i.test(line)) {
+        cls = 'log-level-info';
+      }
+
+      html += '<div class="log-line ' + cls + '">' + display + '</div>';
+    });
+
+    wrap.innerHTML = html || '<div class="empty-state">无相关日志</div>';
+    wrap.scrollTop = wrap.scrollHeight;
+  } catch (e) {
+    console.error('[wiki] loadLog error:', e);
+    if (wrap) wrap.innerHTML = '<div class="empty-state">日志加载失败: ' + e.message + '</div>';
+  }
+}
+
+function formatSize(bytes) {
+  if (bytes < 1024) return bytes + ' B';
+  if (bytes < 1048576) return (bytes / 1024).toFixed(1) + ' KB';
+  return (bytes / 1048576).toFixed(1) + ' MB';
+}
+
+function formatDate(ts) {
+  if (!ts) return '-';
+  var d = new Date(ts * 1000);
+  var pad = function(n) { return String(n).padStart(2, '0'); };
+  return d.getFullYear() + '-' + pad(d.getMonth()+1) + '-' + pad(d.getDate()) + ' ' + pad(d.getHours()) + ':' + pad(d.getMinutes());
+}
+
+function sortFiles(key) {
+  if (_sortKey === key) { _sortAsc = !_sortAsc; } else { _sortKey = key; _sortAsc = true; }
+  _wikiFiles.sort(function(a, b) {
+    var va = a[key], vb = b[key];
+    if (typeof va === 'string') va = va.toLowerCase();
+    if (typeof vb === 'string') vb = vb.toLowerCase();
+    if (va < vb) return _sortAsc ? -1 : 1;
+    if (va > vb) return _sortAsc ? 1 : -1;
+    return 0;
+  });
+  renderTable(_wikiFiles);
+}
+
+function copyPath(path, row) {
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(path).then(function() {
+      showCopyToast(row);
+    });
+  } else {
+    var ta = document.createElement('textarea');
+    ta.value = path;
+    ta.style.position = 'fixed';
+    ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.select();
+    document.execCommand('copy');
+    document.body.removeChild(ta);
+    showCopyToast(row);
+  }
+}
+
+function showCopyToast(row) {
+  var existing = document.querySelector('.copy-toast');
+  if (existing) existing.remove();
+  var toast = document.createElement('div');
+  toast.className = 'copy-toast';
+  toast.textContent = '路径已复制';
+  document.body.appendChild(toast);
+  setTimeout(function() { toast.remove(); }, 1200);
+}
+
+function renderTable(files) {
+  var wrap = document.getElementById('wikiTableWrap');
+  if (!wrap || !files.length) return;
+
+  var arrow = function(key) {
+    if (_sortKey !== key) return '';
+    return _sortAsc ? ' \u25B2' : ' \u25BC';
+  };
+
+  var html = '<table class="file-table"><thead><tr>'
+           + '<th onclick="sortFiles(\'filename\')">文件名' + arrow('filename') + '</th>'
+           + '<th onclick="sortFiles(\'size_bytes\')">大小' + arrow('size_bytes') + '</th>'
+           + '<th onclick="sortFiles(\'modified\')">修改时间' + arrow('modified') + '</th>'
+           + '<th>预览</th></tr></thead><tbody>';
+
+  files.forEach(function(f) {
+    html += '<tr onclick="copyPath(\'' + escAttr(f.abs_path || f.filename) + '\', this)" style="cursor:pointer">'
+         + '<td class="ft-name">' + escHtml(f.filename) + '</td>'
+         + '<td class="ft-meta">' + formatSize(f.size_bytes) + '</td>'
+         + '<td class="ft-meta">' + formatDate(f.modified) + '</td>'
+         + '<td class="ft-preview" title="' + escAttr(f.preview) + '">' + escHtml(f.preview || '') + '</td>'
+         + '</tr>';
+  });
+
+  html += '</tbody></table>';
+  wrap.innerHTML = html;
+}
+
+async function rebuildIndex() {
+  var btn = document.getElementById('btnReindex');
+  var resultDiv = document.getElementById('indexResult');
+  btn.disabled = true;
+  btn.textContent = '索引中...';
+  resultDiv.innerHTML = '';
+
+  try {
+    var resp = await fetch(API + '/wiki/index', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+    });
+
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+
+    var data = await resp.json();
+
+    if (data.error) {
+      resultDiv.innerHTML = '<div class="index-result err">索引失败: ' + escHtml(data.error) + '</div>';
+    } else {
+      var parts = [];
+      if (data.added && data.added.length) parts.push('新增: ' + data.added.join(', '));
+      if (data.updated && data.updated.length) parts.push('更新: ' + data.updated.join(', '));
+      if (data.deleted && data.deleted.length) parts.push('移除: ' + data.deleted.join(', '));
+      if (data.unchanged) parts.push('未变: ' + data.unchanged + ' 个');
+      if (data.errors && data.errors.length) parts.push('错误: ' + data.errors.join('; '));
+
+      resultDiv.innerHTML = '<div class="index-result ok">' + (parts.join('<br>') || '完成') + '</div>';
+
+      await loadWikiData();
+    }
+  } catch (e) {
+    console.error('[wiki] rebuildIndex error:', e);
+    resultDiv.innerHTML = '<div class="index-result err">请求失败: ' + e.message + '</div>';
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '重建索引';
+  }
+}
+
+/* Cleanup */
+var cleanup;
+
+cleanup = function() {};

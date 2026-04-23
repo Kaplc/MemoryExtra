@@ -1,11 +1,14 @@
+from pydantic import ConfigDict
 from pydantic_settings import BaseSettings
 
 
 class Settings(BaseSettings):
+    model_config = ConfigDict(env_prefix="QDRANT_")
+
     qdrant_host: str = "localhost"
     qdrant_port: int = 6333
     grpc_port: int = 6334
-    collection_name: str = "memories"
+    collection_name: str = "mem0_memories"
     embedding_model: str = "BAAI/bge-m3"
     embedding_dim: int = 1024
     top_k: int = 10
@@ -13,9 +16,6 @@ class Settings(BaseSettings):
     decay_lambda: float = 0.03
     search_limit_multiplier: int = 3
     forget_days: int = 100
-
-    class Config:
-        env_prefix = "QDRANT_"
 
 
 settings = Settings()

@@ -110,7 +110,7 @@ def kill_old_instance():
 def check_deps():
     """从 requirements.txt 读取包名并检查是否已安装"""
     import re, importlib.util
-    req_file = os.path.normpath(os.path.join(os.path.dirname(__file__), '..', 'backend', 'requirements.txt'))
+    req_file = os.path.normpath(os.path.join(os.path.dirname(__file__), '..', 'requirements.txt'))
     missing = []
     if not os.path.exists(req_file):
         return True  # 文件不存在则跳过检查
@@ -148,6 +148,7 @@ def check_deps():
                 'fastmcp': 'fastmcp',
                 'mcp': 'mcp',
                 'mem0ai': 'mem0',
+                'lightrag-hku': 'lightrag',
             }
             imp_name = alias_map.get(pkg, pkg.replace('-', '_'))
             spec = importlib.util.find_spec(imp_name)

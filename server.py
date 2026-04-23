@@ -9,7 +9,7 @@ sys.path.insert(0, os.path.join(_BASE, 'backend'))
 
 os.environ.setdefault('QDRANT_EMBEDDING_MODEL', os.path.join(_BASE, 'models', 'bge-m3'))
 os.environ.setdefault('QDRANT_EMBEDDING_DIM', '1024')
-os.environ.setdefault('QDRANT_EXE_PATH', os.path.join(_BASE, 'backend', 'qdrant', 'qdrant.exe'))
+os.environ.setdefault('QDRANT_EXE_PATH', os.path.join(_BASE, 'qdrant', 'qdrant.exe'))
 os.environ.setdefault('FORCE_CPU', '1')
 os.environ['HF_HUB_OFFLINE'] = '1'
 os.environ['TRANSFORMERS_OFFLINE'] = '1'
