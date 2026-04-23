@@ -136,15 +136,18 @@ async function loadOverviewPage() {
     const qHostSub = document.getElementById('scQdrantHostSub');
     const qPortSub = document.getElementById('scQdrantPortSub');
     const qCollectionSub = document.getElementById('scQdrantCollectionSub');
+    const qStorageSub = document.getElementById('scQdrantStorageSub');
     const qTopKSub = document.getElementById('scQdrantTopKSub');
     const qDimSub = document.getElementById('scDimSub');
     if (qHostSub) qHostSub.textContent = `Host: ${st.qdrant_host || 'localhost'}`;
     if (qPortSub) qPortSub.textContent = `Port: ${st.qdrant_port || 6333}`;
     if (qCollectionSub) qCollectionSub.textContent = `Collection: ${st.qdrant_collection || 'memories'}`;
+    if (qStorageSub) qStorageSub.textContent = `存储: ${st.qdrant_storage_path || 'storage'}`;
     if (qTopKSub) qTopKSub.textContent = `Top-K: ${st.qdrant_top_k || 5}`;
     if (qDimSub) qDimSub.textContent = `维度: ${st.embedding_dim || 1024}`;
     const qDiskSizeSub = document.getElementById('scQdrantDiskSizeSub');
-    if (qDiskSizeSub) {
+    if (qDiskSizeSub && !document.getElementById('scQdrantStorageSub')) {
+      // Only show disk size if storage path is not available
       const diskSize = st.qdrant_disk_size || 0;
       if (diskSize >= 1024 * 1024 * 1024) {
         qDiskSizeSub.textContent = `存储: ${(diskSize / (1024 * 1024 * 1024)).toFixed(2)} GB`;
@@ -277,7 +280,7 @@ function drawEChart(data, range) {
       {
         name: '新增',
         type: 'line',
-        data: chartData.map(d => d.added || 0),
+        data: range === 'all' ? [] : chartData.map(d => d.added || 0),
         smooth: true,
         symbol: 'circle',
         symbolSize: 6,
@@ -326,13 +329,25 @@ async function fetchAndDrawChart(range) {
     // 更新时间段统计（取图表最后一个点的增量累计，即24h/7d/30d新增总数）
     const statEl = document.getElementById('statToday');
     const statLabel = document.getElementById('statLabel');
-    if (statEl) {
-      const lastTotal = data.length > 0 ? data[data.length - 1].total : 0;
-      statEl.textContent = lastTotal;
-    }
-    if (statLabel) {
-      const labels = { 'today': '24h新增', 'week': '7天新增', 'month': '30天新增', 'all': '全部新增' };
-      statLabel.textContent = labels[range] || '累计';
+    if (range === 'all') {
+      // 全部页签只显示记忆总数，隐藏增量统计，居中显示
+      if (statEl) statEl.style.display = 'none';
+      if (statLabel) statLabel.style.display = 'none';
+      const chartStats = document.querySelector('.chart-stats');
+      if (chartStats) chartStats.classList.add('single');
+    } else {
+      const chartStats = document.querySelector('.chart-stats');
+      if (chartStats) chartStats.classList.remove('single');
+      if (statEl) statEl.style.display = '';
+      if (statLabel) statLabel.style.display = '';
+      if (statEl) {
+        const lastTotal = data.length > 0 ? data[data.length - 1].total : 0;
+        statEl.textContent = lastTotal;
+      }
+      if (statLabel) {
+        const labels = { 'today': '24h新增', 'week': '7天新增', 'month': '30天新增' };
+        statLabel.textContent = labels[range] || '累计';
+      }
     }
 
     drawEChart(data, range);

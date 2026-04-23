@@ -72,7 +72,9 @@
 
 /* Stats inside chart section */
 .chart-stats { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; padding-top: 16px; border-top: 1px solid #2d3149; }
+.chart-stats.single { grid-template-columns: 1fr; }
 .stat-box { text-align: center; }
+.chart-stats.single .stat-box:first-child { grid-column: 1; }
 .sb-value { font-size: 22px; font-weight: 700; color: #a78bfa; }
 .sb-label { font-size: 11px; color: #64748b; margin-top: 4px; }
 </style>
@@ -98,8 +100,8 @@
       <div class="sc-sub" id="scQdrantHostSub"></div>
       <div class="sc-sub" id="scQdrantPortSub"></div>
       <div class="sc-sub" id="scQdrantCollectionSub"></div>
+      <div class="sc-sub" id="scQdrantStorageSub"></div>
       <div class="sc-sub" id="scQdrantTopKSub"></div>
-      <div class="sc-sub" id="scQdrantDiskSizeSub"></div>
     </div>
     <div class="status-card">
       <div class="sc-label">设备信息</div>
