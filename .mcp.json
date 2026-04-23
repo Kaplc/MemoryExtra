@@ -2,49 +2,49 @@
   "mcpServers": {
     "brain": {
       "type": "stdio",
-      "command": "C:/Users/v_zhyyzheng/Desktop/AiBrain/venv312/Scripts/python.exe",
+      "command": "./venv312/Scripts/python.exe",
       "args": [
         "-m",
         "brain_mcp"
       ],
       "env": {
-        "PYTHONPATH": "C:/Users/v_zhyyzheng/Desktop/AiBrain"
+        "PYTHONPATH": "."
       },
       "disabled": false
     },
     "eye": {
       "type": "stdio",
-      "command": "C:/Users/v_zhyyzheng/Desktop/AiBrain/venv312/Scripts/python.exe",
+      "command": "./venv312/Scripts/python.exe",
       "args": [
         "-m",
         "mcp_servers.eye_mcp.server"
       ],
       "env": {
-        "PYTHONPATH": "C:/Users/v_zhyyzheng/Desktop/AiBrain"
+        "PYTHONPATH": "."
       },
       "disabled": false
     },
     "computer": {
       "type": "stdio",
-      "command": "C:/Users/v_zhyyzheng/Desktop/AiBrain/venv312/Scripts/python.exe",
+      "command": "./venv312/Scripts/python.exe",
       "args": [
         "-m",
         "mcp_servers.computer_mcp.server"
       ],
       "env": {
-        "PYTHONPATH": "C:/Users/v_zhyyzheng/Desktop/AiBrain"
+        "PYTHONPATH": "."
       },
       "disabled": false
     },
     "wiki": {
       "type": "stdio",
-      "command": "C:/Users/v_zhyyzheng/Desktop/AiBrain/venv312/Scripts/python.exe",
+      "command": "./venv312/Scripts/python.exe",
       "args": [
         "-m",
         "mcp_servers.wiki_mcp.server"
       ],
       "env": {
-        "PYTHONPATH": "C:/Users/v_zhyyzheng/Desktop/AiBrain"
+        "PYTHONPATH": "."
       },
       "disabled": false
     }
