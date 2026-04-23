@@ -15,22 +15,6 @@ function onPageLoad() {
   loadWikiData();
 }
 
-function switchTab(tab) {
-  document.querySelectorAll('.tab-btn').forEach(function(btn) {
-    btn.classList.toggle('active', btn.dataset.tab === tab);
-  });
-  document.querySelectorAll('.tab-panel').forEach(function(panel) {
-    panel.classList.toggle('active', panel.id === 'panel' + tab.charAt(0).toUpperCase() + tab.slice(1));
-  });
-  if (tab === 'log') {
-    var wrap = document.getElementById('wikiLogWrap');
-    if (wrap && !wrap.dataset.loaded) {
-      loadLog();
-      wrap.dataset.loaded = '1';
-    }
-  }
-}
-
 async function loadWikiData() {
   var wrap = document.getElementById('wikiTableWrap');
   if (wrap) wrap.innerHTML = '<div class="mini-loading"></div>';

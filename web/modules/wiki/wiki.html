@@ -121,7 +121,6 @@
   <!-- Tab bar -->
   <div class="tab-bar">
     <button class="tab-btn active" data-tab="files" onclick="switchTab('files')">文件列表</button>
-    <button class="tab-btn" data-tab="log" onclick="switchTab('log')">日志</button>
   </div>
 
   <!-- Tab panels -->
@@ -135,20 +134,6 @@
         </div>
         <div class="table-wrap">
           <div id="wikiTableWrap"><div class="mini-loading"></div></div>
-        </div>
-      </div>
-    </div>
-
-    <!-- Log tab -->
-    <div class="tab-panel" id="panelLog">
-      <div class="log-section">
-        <div class="log-header">
-          <div class="log-title">Wiki / RAG 日志</div>
-          <span class="ft-meta" id="wikiLogMeta"></span>
-          <button class="btn-action btn-secondary" style="padding:4px 12px;font-size:11px" onclick="loadLog()">刷新日志</button>
-        </div>
-        <div class="log-wrap" id="wikiLogWrap">
-          <div class="empty-state">点击「刷新日志」加载</div>
         </div>
       </div>
     </div>
