@@ -50,3 +50,4 @@ backend/qdrant/config/config.yaml
 .codebuddy/scheduled_tasks.lockrag/lightrag_data/
 rag/lightrag_data/
 .claude\settings.local.jsonmem0/
+.claude/hookmd

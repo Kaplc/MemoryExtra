@@ -12,12 +12,10 @@ DEFAULT_MEM0 = {
     "lightrag_dir": "rag/lightrag_data",
     "language": "Chinese",
     "chunk_token_size": 1200,
-    "llm": {
-        "provider": "",
-        "model": "",
-        "api_key": "",
-        "base_url": ""
-    },
+    "llm_provider": "",
+    "llm_model": "",
+    "llm_api_key": "",
+    "llm_base_url": "",
     "search_timeout": 30
 }
 
@@ -73,8 +71,15 @@ class AibrainConfigManager:
 
     def write_mem0(self, data: dict):
         self.ensure_config_dir()
-        current = self.read_mem0()
-        current.update(data)
+        # 清理嵌套的llm对象，只保留扁平字段
+        current = {}
+        for key, value in data.items():
+            if key == 'llm' and isinstance(value, dict):
+                # 扁平化llm对象为llm_provider等
+                for k, v in value.items():
+                    current[f'llm_{k}'] = v
+            else:
+                current[key] = value
         with open(self._mem0_path, 'w', encoding='utf-8') as f:
             json.dump(current, f, indent=2, ensure_ascii=False)
 
@@ -86,8 +91,14 @@ class AibrainConfigManager:
 
     def write_wiki(self, data: dict):
         self.ensure_config_dir()
-        current = self.read_wiki()
-        current.update(data)
+        # 清理嵌套结构，只保留扁平字段
+        current = {}
+        for key, value in data.items():
+            if isinstance(value, dict):
+                for k, v in value.items():
+                    current[f'{key}_{k}'] = v
+            else:
+                current[key] = value
         with open(self._wiki_path, 'w', encoding='utf-8') as f:
             json.dump(current, f, indent=2, ensure_ascii=False)
 
