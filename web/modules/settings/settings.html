@@ -1,3 +1,37 @@
+<div class="settings-wrap">
+  <div class="settings-header">
+    <div class="settings-title">设置</div>
+    <div class="header-actions">
+      <button class="btn btn-secondary" id="resetBtn" onclick="resetSettings()">重置</button>
+      <button class="btn btn-primary" id="saveBtn" onclick="applySettings()">保存</button>
+    </div>
+  </div>
+
+  <div class="set-row">
+    <div class="set-row-label">
+      <div class="set-label">模型</div>
+      <div class="set-desc" id="modelDesc">BAAI/bge-m3 · 向量维度 1024</div>
+    </div>
+    <select class="model-select" id="modelSelect">
+      <option value="BAAI/bge-m3" selected>BAAI/bge-m3</option>
+    </select>
+  </div>
+
+  <div class="set-row">
+    <div class="set-row-label">
+      <div class="set-label">推理设备</div>
+      <div class="set-desc">选择模型推理使用的硬件</div>
+    </div>
+    <select class="device-select" id="deviceSelect" onchange="selectDevice(this.value)">
+      <option value="auto">自动</option>
+      <option value="gpu">GPU</option>
+      <option value="cpu">CPU</option>
+    </select>
+  </div>
+
+  <div class="gpu-info" id="gpuInfo">检测中...</div>
+</div>
+
 <style>
 .settings-wrap { padding: 24px; display: flex; flex-direction: column; gap: 16px; box-sizing: border-box; flex: 1; }
 .settings-header { display: flex; align-items: center; justify-content: space-between; }
@@ -33,37 +67,3 @@
 }
 .model-select:focus, .device-select:focus { border-color: #7c3aed; }
 </style>
-
-<div class="settings-wrap">
-  <div class="settings-header">
-    <div class="settings-title">设置</div>
-    <div class="header-actions">
-      <button class="btn btn-secondary" id="resetBtn" onclick="resetSettings()">重置</button>
-      <button class="btn btn-primary" id="saveBtn" onclick="applySettings()">保存</button>
-    </div>
-  </div>
-
-  <div class="set-row">
-    <div class="set-row-label">
-      <div class="set-label">模型</div>
-      <div class="set-desc" id="modelDesc">BAAI/bge-m3 · 向量维度 1024</div>
-    </div>
-    <select class="model-select" id="modelSelect">
-      <option value="BAAI/bge-m3" selected>BAAI/bge-m3</option>
-    </select>
-  </div>
-
-  <div class="set-row">
-    <div class="set-row-label">
-      <div class="set-label">推理设备</div>
-      <div class="set-desc">选择模型推理使用的硬件</div>
-    </div>
-    <select class="device-select" id="deviceSelect" onchange="selectDevice(this.value)">
-      <option value="auto">自动</option>
-      <option value="gpu">GPU</option>
-      <option value="cpu">CPU</option>
-    </select>
-  </div>
-
-  <div class="gpu-info" id="gpuInfo">检测中...</div>
-</div>

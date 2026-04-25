@@ -5,9 +5,8 @@ var _sortKey = 'modified';
 var _sortAsc = false;
 var _wikiConfig = null;
 
-function escHtml(s) {
-  return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-}
+/* ==================== HTML转义 ==================== */
+// 属性转义：用于安全的HTML属性值
 function escAttr(s) {
   return String(s || '').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
 }

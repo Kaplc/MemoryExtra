@@ -175,6 +175,50 @@ def ui_settings():
         return jsonify({"error": str(e)}), 500
 
 
+@app.route('/console/commands')
+def get_console_commands():
+    """扫描 web/console 目录，返回所有 cmd_*.js 文件列表"""
+    import glob
+    try:
+        console_dir = os.path.join(_PROJECT_ROOT, 'web', 'console')
+        pattern = os.path.join(console_dir, 'cmd_*.js')
+        files = glob.glob(pattern)
+        # 只返回文件名，按字母排序
+        commands = sorted([os.path.basename(f) for f in files])
+        return jsonify({"commands": commands})
+    except Exception as e:
+        logger.error(f"[API✗] /console/commands 失败: {e}")
+        return jsonify({"error": str(e), "commands": []})
+
+
+@app.route('/console/poll', methods=['GET'])
+def poll_console_queue():
+    """MCP服务器写入的命令队列，供前端轮询"""
+    try:
+        queue_file = os.path.join(os.path.expanduser("~"), ".aibrain", "console_queue.json")
+        if os.path.exists(queue_file):
+            with open(queue_file, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+                return jsonify({"commands": data.get("commands", [])})
+        return jsonify({"commands": []})
+    except Exception as e:
+        logger.error(f"[API✗] /console/poll 失败: {e}")
+        return jsonify({"error": str(e), "commands": []})
+
+
+@app.route('/console/poll', methods=['POST'])
+def clear_console_queue():
+    """清空命令队列（前端执行完成后调用）"""
+    try:
+        queue_file = os.path.join(os.path.expanduser("~"), ".aibrain", "console_queue.json")
+        with open(queue_file, 'w', encoding='utf-8') as f:
+            json.dump({"commands": [], "timestamp": int(time.time())}, f)
+        return jsonify({"ok": True})
+    except Exception as e:
+        logger.error(f"[API✗] /console/poll(clear) 失败: {e}")
+        return jsonify({"error": str(e)})
+
+
 # ── 预加载（模型 + Qdrant）────────────────────────────────
 
 def _preload():

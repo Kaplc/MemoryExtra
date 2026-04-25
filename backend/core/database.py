@@ -37,6 +37,13 @@ class StatsDB:
             )
         ''')
         db.execute('CREATE INDEX IF NOT EXISTS idx_stream_time ON stream(created_at DESC)')
+        db.execute('''
+            CREATE TABLE IF NOT EXISTS search_history (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                query TEXT NOT NULL,
+                created_at TEXT DEFAULT (datetime('now','localtime'))
+            )
+        ''')
         db.commit()
         db.close()
 
@@ -178,20 +185,20 @@ class StatsDB:
 
             from brain_mcp.config import settings
             from qdrant_client import QdrantClient
-            
+
             client = QdrantClient(host=settings.qdrant_host, port=settings.qdrant_port, check_compatibility=False)
             collection_info = client.get_collection(settings.collection_name)
             qdrant_count = collection_info.points_count
-            
+
             # 获取当前数据库中的总数
             db = self._get_conn()
             current_total = db.execute('SELECT SUM(added - deleted) as total FROM daily_stats').fetchone()[0] or 0
-            
+
             # 如果 Qdrant 数量与数据库不一致，调整今天的记录
             if qdrant_count != current_total:
                 today_str = _dt.date.today().isoformat()
                 diff = qdrant_count - current_total
-                
+
                 # 获取今天的记录
                 row = db.execute('SELECT * FROM daily_stats WHERE date = ?', (today_str,)).fetchone()
                 if row:
@@ -206,9 +213,49 @@ class StatsDB:
                         (today_str, max(0, qdrant_count))
                     )
                 db.commit()
-            
+
             db.close()
             return qdrant_count
         except Exception as e:
             print(f"[database] Failed to sync qdrant count: {e}")
             return None
+
+    # ── 搜索历史 ──────────────────────────────────────────────
+
+    def add_search_history(self, query: str):
+        """添加搜索记录（去重：先删同query再插，保持最多20条）"""
+        db = self._get_conn()
+        db.execute('DELETE FROM search_history WHERE query = ?', (query,))
+        db.execute(
+            'INSERT INTO search_history (query) VALUES (?)',
+            (query[:500],)
+        )
+        db.commit()
+
+        # 只保留最近20条
+        total = db.execute('SELECT COUNT(*) as c FROM search_history').fetchone()[0]
+        if total > 20:
+            db.execute(f'''
+                DELETE FROM search_history WHERE id NOT IN (
+                    SELECT id FROM search_history ORDER BY id DESC LIMIT 20
+                )
+            ''')
+            db.commit()
+        db.close()
+
+    def get_search_history(self, limit: int = 20):
+        """获取最近的搜索记录"""
+        db = self._get_conn()
+        rows = db.execute(
+            'SELECT id, query, created_at FROM search_history ORDER BY id DESC LIMIT ?',
+            (limit,)
+        ).fetchall()
+        db.close()
+        return [dict(r) for r in rows]
+
+    def clear_search_history(self):
+        """清空搜索历史"""
+        db = self._get_conn()
+        db.execute('DELETE FROM search_history')
+        db.commit()
+        db.close()

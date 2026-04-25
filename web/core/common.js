@@ -41,9 +41,15 @@ async function fetchJson(url, retries = 3) {
   }
 }
 
-/**
- * Toast 提示
- */
+/* ==================== HTML转义 ==================== */
+// 防止XSS攻击，将特殊字符转换为HTML实体
+function escHtml(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+/* ==================== Toast 提示 ==================== */
+// 显示操作结果提示，3秒后自动消失
+// 参数：msg提示内容，type类型（success/error/info）
 function toast(msg, type='success') {
   const el = document.getElementById('toast');
   if (!el) return;

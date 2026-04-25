@@ -1,3 +1,36 @@
+<div class="steam-wrap">
+  <div class="steam-header">
+    <div class="steam-title">记忆流</div>
+    <div class="steam-count" id="streamCount">共 0 条</div>
+  </div>
+
+  <div class="steam-columns">
+    <!-- 左侧：写入操作 -->
+    <div class="steam-column">
+      <div class="steam-column-header">
+        <div class="steam-column-dot store"></div>
+        <span>写入记忆</span>
+        <span class="steam-column-count" id="storeCount">0 条</span>
+      </div>
+      <div class="steam-list" id="storeList">
+        <div class="steam-empty">暂无写入记录</div>
+      </div>
+    </div>
+
+    <!-- 右侧：查询操作 -->
+    <div class="steam-column">
+      <div class="steam-column-header">
+        <div class="steam-column-dot search"></div>
+        <span>查询记忆</span>
+        <span class="steam-column-count" id="searchCount">0 条</span>
+      </div>
+      <div class="steam-list" id="searchList">
+        <div class="steam-empty">暂无查询记录</div>
+      </div>
+    </div>
+  </div>
+</div>
+
 <style>
 .steam-wrap { padding: 24px; flex: 1; display: flex; flex-direction: column; min-height: 0; overflow: hidden; gap: 16px; box-sizing: border-box; height: 100%; }
 .steam-header { display: flex; align-items: center; justify-content: space-between; flex-shrink: 0; }
@@ -38,36 +71,3 @@
 .steam-time { font-size: 10px; color: #475569; white-space: nowrap; flex-shrink: 0; }
 .steam-empty { text-align: center; color: #475569; padding: 40px 0; font-size: 13px; }
 </style>
-
-<div class="steam-wrap">
-  <div class="steam-header">
-    <div class="steam-title">记忆流</div>
-    <div class="steam-count" id="streamCount">共 0 条</div>
-  </div>
-
-  <div class="steam-columns">
-    <!-- 左侧：写入操作 -->
-    <div class="steam-column">
-      <div class="steam-column-header">
-        <div class="steam-column-dot store"></div>
-        <span>写入记忆</span>
-        <span class="steam-column-count" id="storeCount">0 条</span>
-      </div>
-      <div class="steam-list" id="storeList">
-        <div class="steam-empty">暂无写入记录</div>
-      </div>
-    </div>
-
-    <!-- 右侧：查询操作 -->
-    <div class="steam-column">
-      <div class="steam-column-header">
-        <div class="steam-column-dot search"></div>
-        <span>查询记忆</span>
-        <span class="steam-column-count" id="searchCount">0 条</span>
-      </div>
-      <div class="steam-list" id="searchList">
-        <div class="steam-empty">暂无查询记录</div>
-      </div>
-    </div>
-  </div>
-</div>

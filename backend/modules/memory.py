@@ -32,6 +32,7 @@ def register(app, stats_db):
             return jsonify({"results": []})
         try:
             results = search_memory(query)
+            stats_db.add_search_history(query)
             stats_db.append_stream('search', content=query)
             return jsonify({"results": results})
         except Exception as e:
@@ -97,6 +98,24 @@ def register(app, stats_db):
                     pass
             threading.Thread(target=_do_update, daemon=True).start()
             return jsonify({"result": "更新已提交后台"})
+        except Exception as e:
+            return jsonify({"error": str(e)})
+
+    @app.route('/search-history', methods=['GET'])
+    def get_search_history():
+        """获取搜索历史"""
+        try:
+            history = stats_db.get_search_history(limit=20)
+            return jsonify({"history": history})
+        except Exception as e:
+            return jsonify({"error": str(e), "history": []})
+
+    @app.route('/search-history', methods=['DELETE'])
+    def clear_search_history():
+        """清空搜索历史"""
+        try:
+            stats_db.clear_search_history()
+            return jsonify({"ok": True})
         except Exception as e:
             return jsonify({"error": str(e)})
 

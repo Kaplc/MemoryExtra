@@ -57,11 +57,13 @@ class ModelManager:
                 local_files_only=True
             )
             emb._model = model
-            self._ready["model"] = True
             self._logger.info(f"Model loaded successfully on {device}")
         except Exception as e:
             self._logger.error(f"Model load failed: {e}")
             self._ready["model"] = False
+            return
+
+        self._ready["model"] = True
 
     def get_model_info(self):
         from brain_mcp import embedding as emb
