@@ -34,7 +34,7 @@ def _call(path: str, data: dict) -> dict:
 
 def store_memory(text: str) -> str:
     """存储记忆（LLM 自动拆分事实），返回实际记住的文本"""
-    result = _call("/store", {"text": text})
+    result = _call("/mcp/store", {"text": text})
     if "error" in result:
         raise RuntimeError(result["error"])
     texts = result.get("stored_texts", [])
@@ -46,7 +46,7 @@ def store_memory(text: str) -> str:
 
 def search_memory(query: str) -> list[dict]:
     """搜索记忆（后端自动根据数据量选择最优策略），返回匹配的文本和分数"""
-    result = _call("/memory/search", {"query": query})
+    result = _call("/mcp/search", {"query": query})
     if "error" in result:
         raise RuntimeError(result["error"])
     return [{"text": r["text"], "score": r.get("score", 0)} for r in result.get("results", [])]

@@ -12,6 +12,35 @@ def register(app, stats_db):
 
     @app.route('/store', methods=['POST'])
     def store():
+        """用户手动存储，不记录到记忆流"""
+        data = request.get_json()
+        text = (data or {}).get('text', '').strip()
+        if not text:
+            return jsonify({"error": "内容不能为空"})
+        try:
+            result = store_memory(text)
+            stats_db.record_action(added=1)
+            return jsonify(result)
+        except Exception as e:
+            return jsonify({"error": str(e)})
+
+    @app.route('/search', methods=['POST'])
+    def search():
+        """用户手动搜索，不记录到记忆流"""
+        data = request.get_json()
+        query = (data or {}).get('query', '').strip()
+        if not query:
+            return jsonify({"results": []})
+        try:
+            results = search_memory(query)
+            stats_db.add_search_history(query)
+            return jsonify({"results": results})
+        except Exception as e:
+            return jsonify({"error": str(e), "results": []})
+
+    @app.route('/mcp/store', methods=['POST'])
+    def mcp_store():
+        """MCP专用存储，走独立API，需要记录到记忆流"""
         data = request.get_json()
         text = (data or {}).get('text', '').strip()
         if not text:
@@ -24,29 +53,16 @@ def register(app, stats_db):
         except Exception as e:
             return jsonify({"error": str(e)})
 
-    @app.route('/search', methods=['POST'])
-    def search():
+    @app.route('/mcp/search', methods=['POST'])
+    def mcp_search():
+        """MCP专用搜索，走独立API，需要记录到记忆流"""
         data = request.get_json()
         query = (data or {}).get('query', '').strip()
         if not query:
             return jsonify({"results": []})
         try:
             results = search_memory(query)
-            stats_db.add_search_history(query)
             stats_db.append_stream('search', content=query)
-            return jsonify({"results": results})
-        except Exception as e:
-            return jsonify({"error": str(e), "results": []})
-
-    @app.route('/memory/search', methods=['POST'])
-    def memory_search():
-        """MCP专用搜索，不保存搜索历史"""
-        data = request.get_json()
-        query = (data or {}).get('query', '').strip()
-        if not query:
-            return jsonify({"results": []})
-        try:
-            results = search_memory(query)
             return jsonify({"results": results})
         except Exception as e:
             return jsonify({"error": str(e), "results": []})
