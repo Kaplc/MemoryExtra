@@ -118,8 +118,9 @@
   font-size: 12px;
   line-height: 1.5;
 }
-.console-line { padding: 2px 0; border-bottom: 1px solid #12141c; }
-.console-line:hover { background: #12141c; }
+.console-line { padding: 2px 0; border-bottom: 1px solid #12141c; cursor: pointer; transition: background .15s; }
+.console-line:hover { background: #1e293b; }
+.console-line:active { background: #263044; }
 .con-line-info { color: #94a3b8; }
 .con-line-warn { color: #fde047; }
 .con-line-error { color: #fca5a5; }
@@ -163,6 +164,21 @@
   transition: opacity .3s;
 }
 .console-hint.show { opacity: 1; }
+
+/* 控制台复制提示 */
+.console-copy-toast {
+  position: fixed;
+  bottom: 320px;
+  right: 24px;
+  background: #22c55e;
+  color: #fff;
+  padding: 4px 14px;
+  border-radius: 4px;
+  font-size: 12px;
+  z-index: 600;
+  animation: conToastIn .2s ease;
+}
+@keyframes conToastIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
 </style>
 
 <style>

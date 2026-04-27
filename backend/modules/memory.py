@@ -1,10 +1,13 @@
 """记忆 CRUD 路由：/store, /search, /list, /delete, /organize"""
+import logging
 from flask import request, jsonify
 
 from modules.brain.memory import (
     store_memory, search_memory, list_memories,
     delete_memory, update_memory, organize_memories
 )
+
+logger = logging.getLogger('memory')
 
 
 def register(app, stats_db):
@@ -26,14 +29,21 @@ def register(app, stats_db):
 
     @app.route('/search', methods=['POST'])
     def search():
-        """用户手动搜索，不记录到记忆流"""
+        """用户手动搜索，不记录到记忆流；MCP来源也不记录搜索历史"""
         data = request.get_json()
         query = (data or {}).get('query', '').strip()
+        ua = request.headers.get('User-Agent', '')
+        is_mcp = 'python' in ua.lower() or 'urllib' in ua.lower()
+        logger.info(f"[TRACE] /search called | query={query[:80]!r} | remote={request.remote_addr} | ua={ua[:60]!r} | is_mcp={is_mcp}")
         if not query:
             return jsonify({"results": []})
         try:
             results = search_memory(query)
-            stats_db.add_search_history(query)
+            if not is_mcp:
+                stats_db.add_search_history(query)
+                logger.info(f"[TRACE] /search → add_search_history written | query={query[:80]!r}")
+            else:
+                logger.info(f"[TRACE] /search → skipped add_search_history (MCP source) | query={query[:80]!r}")
             return jsonify({"results": results})
         except Exception as e:
             return jsonify({"error": str(e), "results": []})
@@ -58,6 +68,7 @@ def register(app, stats_db):
         """MCP专用搜索，走独立API，需要记录到记忆流"""
         data = request.get_json()
         query = (data or {}).get('query', '').strip()
+        logger.info(f"[TRACE] /mcp/search called | query={query[:80]!r} | remote={request.remote_addr} | path={request.path}")
         if not query:
             return jsonify({"results": []})
         try:

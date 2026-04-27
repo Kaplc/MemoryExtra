@@ -52,8 +52,34 @@ function logToConsole(message, level = 'info') {
   const line = document.createElement('div');
   line.className = `console-line con-line-${level}`;
   line.innerHTML = `<span class="con-time">${time}</span>${escHtml(message)}`;
+  line.title = '点击复制';
+  line.onclick = function() { copyConsoleLine(this); };
   output.appendChild(line);
   output.scrollTop = output.scrollHeight;
+}
+
+/* ==================== 复制控制台行 ==================== */
+function copyConsoleLine(el) {
+  var text = el.textContent || el.innerText || '';
+  if (!text) return;
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).then(function() { showConsoleCopyToast(); });
+  } else {
+    var ta = document.createElement('textarea');
+    ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
+    document.body.appendChild(ta); ta.select(); document.execCommand('copy');
+    document.body.removeChild(ta);
+    showConsoleCopyToast();
+  }
+}
+
+function showConsoleCopyToast() {
+  var existing = document.querySelector('.console-copy-toast');
+  if (existing) existing.remove();
+  var toast = document.createElement('div');
+  toast.className = 'console-copy-toast'; toast.textContent = '已复制';
+  document.body.appendChild(toast);
+  setTimeout(function() { toast.remove(); }, 1200);
 }
 
 /* ==================== 处理控制台输入 ==================== */

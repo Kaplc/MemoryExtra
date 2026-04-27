@@ -2,6 +2,10 @@
 import os
 import sqlite3
 import datetime as _dt
+import logging
+import traceback as _tb
+
+_db_logger = logging.getLogger('memory')
 
 
 class StatsDB:
@@ -224,6 +228,8 @@ class StatsDB:
 
     def add_search_history(self, query: str):
         """添加搜索记录（去重：先删同query再插，保持最多20条）"""
+        caller = ''.join(_tb.format_stack()[-4:-1])
+        _db_logger.info(f"[TRACE] add_search_history called | query={query[:80]!r}\nCaller:\n{caller}")
         db = self._get_conn()
         db.execute('DELETE FROM search_history WHERE query = ?', (query,))
         db.execute(

@@ -116,11 +116,8 @@ function updateStatusUI(d) {
 let _lastModelLoaded = false;
 
 async function checkStatus(retries = 3) {
-  const t0 = Date.now();
   try {
     const d = await fetch(API + '/status').then(r => r.json());
-    const elapsed = Date.now() - t0;
-    console.log('[router] /status response:', d.model_loaded, 'latency=' + elapsed + 'ms');
     updateStatusUI(d);
     _lastModelLoaded = d.model_loaded;
   } catch {
