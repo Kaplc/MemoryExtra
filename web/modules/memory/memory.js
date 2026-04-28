@@ -3,38 +3,126 @@ var allMemories = [];          // 存储所有记忆列表（从API加载）
 var searchResults = [];        // 搜索结果列表（临时保存搜索返回的结果）
 var searchTimer = null;        // 定时器引用（用于实现防抖延迟）
 var activeQuery = '';          // 当前搜索关键词（标记已搜索的状态）
+var searchHistory = [];        // 存储搜索历史（从API加载）
+var currentTab = 'search';     // 当前激活的 tab
 
-/* ==================== 搜索历史 ==================== */
-var searchHistory = [];  // 存储搜索历史（从API加载，代替localStorage）
+// 整理状态持久化到 window，切换页面后恢复
+window._organizeState = window._organizeState || { groups: [], refined: [], busy: false, appliedGroups: [] };
+var organizeGroups = window._organizeState.groups;
+var organizeRefined = window._organizeState.refined;
+var _organizeBusy = window._organizeState.busy;
+var _appliedGroups = window._organizeState.appliedGroups; // 已写入的组索引
+
+function _saveOrganizeState() {
+  window._organizeState.groups = organizeGroups;
+  window._organizeState.refined = organizeRefined;
+  window._organizeState.busy = _organizeBusy;
+  window._organizeState.appliedGroups = _appliedGroups;
+}
 
 /* ==================== 页面初始化 ==================== */
 function onPageLoad() {
-  console.log('[memory] onPageLoad start');
-  // 监听键盘事件：检查是否同时按下了Ctrl和Enter键，是则调用storeMemory()
-  // 流程：keydown事件 → 检测e.ctrlKey && e.key==='Enter' → storeMemory()
-  document.getElementById('storeInput').addEventListener('keydown', e => {
-    if (e.ctrlKey && e.key === 'Enter') storeMemory();
-  });
-
-  // 监听键盘事件：检测是否按下Enter键，是则调用searchMemory()
-  // 流程：keydown事件 → 检测e.key==='Enter' → searchMemory()
+  // 搜索框回车
   document.getElementById('searchInput').addEventListener('keydown', e => {
     if (e.key === 'Enter') searchMemory();
   });
-
-  // 加载统计数据：调用loadAll()获取记忆总数并更新页面显示
-  console.log('[memory] calling loadAll and loadSearchHistory');
+  // 保存框 Ctrl+Enter
+  document.getElementById('storeInput').addEventListener('keydown', e => {
+    if (e.ctrlKey && e.key === 'Enter') storeMemory();
+  });
   loadAll();
-
-  // 加载搜索历史：从API获取历史记录并渲染到侧边栏
   loadSearchHistory();
-  console.log('[memory] onPageLoad done');
+  // 恢复整理状态
+  restoreOrganizeState();
+}
+
+/* ==================== 整理状态恢复 ==================== */
+function restoreOrganizeState() {
+  // 重新从 window 同步最新状态（老 async 函数可能在页面切走后完成了更新）
+  organizeGroups = window._organizeState.groups || [];
+  organizeRefined = window._organizeState.refined || [];
+  _organizeBusy = window._organizeState.busy || false;
+  _appliedGroups = window._organizeState.appliedGroups || [];
+
+  // 如果正在分析中，自动重新触发
+  if (_organizeBusy) {
+    switchTab('organize');
+    _organizeBusy = false;
+    _saveOrganizeState();
+    startOrganize();
+    return;
+  }
+  if (!organizeGroups.length && !organizeRefined.length) return;
+  var contentEl = document.getElementById('organizeContent');
+  if (!contentEl) return;
+
+  // 切换到整理 tab
+  switchTab('organize');
+
+  // 重建分组卡片
+  var html = '<div class="organize-header"><span>恢复整理状态（' + organizeGroups.length + ' 组）</span></div>';
+  html += '<div class="organize-groups" id="organizeGroups">';
+  organizeGroups.forEach(function(g, gi) {
+    var isApplied = _appliedGroups.indexOf(gi) !== -1;
+    var hasRefined = organizeRefined.some(function(r) { return r.group_id === gi; });
+    var items = g.memories.map(function(m, mi) { return '<div class="og-item"><span class="og-idx">' + (mi+1) + '</span>' + escHtml(m.text) + '</div>'; }).join('');
+    var cardClass = isApplied ? 'organize-group-card og-applied' : 'organize-group-card';
+    var btnHtml = isApplied ? '<button class="btn-secondary-sm og-refine-btn" disabled>已写入</button>' :
+      hasRefined ? '<button class="btn-secondary-sm og-refine-btn" disabled>已精炼</button>' :
+      '<button class="btn-secondary-sm og-refine-btn" onclick="refineGroup(' + gi + ')">精炼此组</button>';
+    html += '<div class="' + cardClass + '">' +
+      '<div class="og-label">组 ' + (gi+1) + ' · 相似度 ' + g.similarity + ' · ' + g.memories.length + ' 条' + btnHtml + '</div>' +
+      items + '</div>';
+  });
+  html += '</div><div id="organizeRefined" class="organize-refined"></div>';
+  contentEl.innerHTML = html;
+
+  // 重建已精炼的卡片内结果
+  var cards = document.querySelectorAll('.organize-group-card');
+  organizeRefined.forEach(function(item, idx) {
+    var gi = item.group_id;
+    var card = cards[gi];
+    if (!card) return;
+    // 移除 og-applied 以外的精炼按钮禁用已经处理
+    var refineBtn = card.querySelector('.og-refine-btn');
+    if (refineBtn) { refineBtn.textContent = '已精炼'; refineBtn.disabled = true; }
+    card.classList.remove('og-applied');
+
+    var div = document.createElement('div');
+    div.className = 'og-refine-result';
+    var refinedClass = item.refined ? 'refined' : '';
+    div.innerHTML =
+      '<div class="og-refine-divider"></div>' +
+      '<div class="og-refine-label ' + refinedClass + '">精炼结果' + (item.refined ? '' : '（降级）') + '</div>' +
+      '<div class="organize-refined-text" contenteditable="true" id="refinedText' + idx + '">' + escHtml(item.refined_text) + '</div>' +
+      '<div class="organize-category">分类: ' + escHtml(item.category || 'unknown') + '</div>' +
+      '<div class="og-refine-actions">' +
+      '<div class="organize-check"><input type="checkbox" id="refinedCheck' + idx + '" checked><label for="refinedCheck' + idx + '">确认合并</label></div>' +
+      '<button class="btn btn-sm btn-primary" onclick="applySingleRefine(' + idx + ')">确认修改</button></div>';
+    card.appendChild(div);
+  });
+
+  updateRefineFooter();
+}
+
+/* ==================== Tab 切换 ==================== */
+function switchTab(tab) {
+  currentTab = tab;
+  // 更新 tab 按钮样式
+  document.querySelectorAll('.nav-tab').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.tab === tab);
+  });
+  // 显示/隐藏面板
+  document.getElementById('tabSearch').style.display = tab === 'search' ? '' : 'none';
+  document.getElementById('tabStore').style.display = tab === 'store' ? '' : 'none';
+  document.getElementById('tabOrganize').style.display = tab === 'organize' ? '' : 'none';
+  // 切换到保存时显示全部记忆
+  if (tab === 'store' && !activeQuery) {
+    renderList(allMemories, false, 'allMemoryList');
+  }
 }
 
 /* ==================== API 请求 ==================== */
-// 封装fetch POST请求，发送JSON数据，返回解析后的JSON响应
-// 参数：path接口路径，data要发送的数据对象
-// 返回：Promise<response.json()>
 async function api(path, data) {
   const r = await fetch(API + path, {
     method: 'POST',
@@ -45,77 +133,60 @@ async function api(path, data) {
 }
 
 /* ==================== 保存记忆 ==================== */
-// 获取textarea内容，调用/store接口保存记忆
-// 流程：获取输入 → 非空校验 → api('/store') → 成功则清空输入框+更新统计
-// 错误处理：显示toast提示错误信息
 async function storeMemory() {
   const text = document.getElementById('storeInput').value.trim();
   if (!text) return;
   try {
     const r = await api('/store', {text});
     if (r.error) { toast(r.error, 'error'); return; }
-    toast('✅ ' + r.result, 'success');
+    toast(r.result, 'success');
     document.getElementById('storeInput').value = '';
-    loadAll();  // 保存成功后更新统计数字
+    loadAll();
   } catch(e) { toast('连接失败', 'error'); }
 }
 
 /* ==================== 防抖搜索 ==================== */
-// 清除之前的定时器，设置新的500ms延迟后执行searchMemory()
-// 作用：避免用户快速输入时每字都触发搜索，减少服务器压力
 function debounceSearch() {
   clearTimeout(searchTimer);
   searchTimer = setTimeout(searchMemory, 500);
 }
 
 /* ==================== 搜索记忆 ==================== */
-// 从输入框获取关键词，调用/search接口获取相似记忆
-// 流程：获取输入 → 设为activeQuery → api('/search') → 保存结果 → 添加历史 → 更新标题 → 渲染列表
-// 搜索结果通过renderList(items, true)显示在右侧区域
 async function searchMemory() {
   const query = document.getElementById('searchInput').value.trim();
   if (!query) return;
   activeQuery = query;
-  console.log('[memory] searchMemory start', query);
   try {
     const r = await api('/search', {query});
     searchResults = r.results || [];
-    console.log('[memory] search results:', searchResults.length);
-    loadSearchHistory();                    // 刷新搜索历史（后端在/search时已保存）
-    updateListTitle(`搜索结果: ${query}`);        // 显示当前搜索关键词
-    renderList(searchResults, true);              // isSearch=true表示搜索结果样式
+    loadSearchHistory();
+    renderList(searchResults, true, 'memoryList');
   } catch(e) { toast('搜索失败', 'error'); }
 }
 
-/* ==================== 加载统计数据 ==================== */
-// 调用/memory-count获取数字，同时加载记忆列表并显示
-// 统计数字异步递增动画，无需等模型
+/* ==================== 加载全部数据 ==================== */
 async function loadAll() {
-  console.log('[memory] loadAll start');
-  updateStats();  // 先显示已知数字
-
-  // 异步加载记忆列表（渲染到右侧区域）
+  updateStats();
   try {
     const r = await api('/list', {});
     allMemories = r.memories || [];
-    console.log('[memory] list loaded:', allMemories.length, 'memories');
-    if (!activeQuery) {
-      renderList(allMemories, false);  // 无搜索关键词时显示全部记忆
-      updateListTitle('记忆列表');
+    // 搜索 tab：有搜索词则刷新搜索结果，否则保持空状态
+    if (activeQuery) {
+      renderList(searchResults, true, 'memoryList');
+    }
+    // 保存 tab 可见时刷新全部记忆列表
+    if (currentTab === 'store') {
+      renderList(allMemories, false, 'allMemoryList');
     }
   } catch(e) { console.error('[memory] loadAll error:', e); }
 }
 
 /* ==================== 更新统计数字 ==================== */
-// 调用/memory-count接口获取记忆总数，更新侧边栏统计显示
-// 接口失败时使用本地allMemories.length作为兜底方案
 async function updateStats() {
-  console.log('[memory] updateStats start');
   try {
     const cntRes = await fetchJson(API + '/memory-count');
     const el = document.getElementById('totalCount');
     if (el) animateCount(el, cntRes.count || 0);
-    console.log('[memory] total count:', cntRes.count);
   } catch(e) {
     const el = document.getElementById('totalCount');
     if (el) el.textContent = allMemories.length;
@@ -123,8 +194,6 @@ async function updateStats() {
 }
 
 /* ==================== 数字递增动画 ==================== */
-// 将数字从当前值递增到目标值（每秒步进，视觉上更流畅）
-// 参数：el元素，target目标数字
 function animateCount(el, target) {
   const current = parseInt(el.textContent) || 0;
   if (current === target) return;
@@ -143,109 +212,291 @@ function animateCount(el, target) {
 }
 
 /* ==================== 删除记忆 ==================== */
-// 调用/delete接口删除指定记忆，删除后更新allMemories和searchResults
-// 流程：api('/delete') → 从两个数组中过滤掉该id → 更新统计 → 重新渲染列表
 async function deleteMemory(id) {
   try {
     const r = await api('/delete', {memory_id: id});
     if (r.error) { toast(r.error, 'error'); return; }
-    toast('🗑️ ' + r.result, 'success');
-    allMemories = allMemories.filter(m => m.id !== id);      // 从全部记忆中移除
-    searchResults = searchResults.filter(m => m.id !== id); // 从搜索结果中移除
+    toast(r.result, 'success');
+    allMemories = allMemories.filter(m => m.id !== id);
+    searchResults = searchResults.filter(m => m.id !== id);
     updateStats();
-    renderList(allMemories, false);
+    // 刷新当前可见的列表
+    if (currentTab === 'search') renderList(activeQuery ? searchResults : allMemories, !!activeQuery, 'memoryList');
+    if (currentTab === 'store') renderList(allMemories, false, 'allMemoryList');
   } catch(e) { toast('删除失败', 'error'); }
 }
 
 /* ==================== 渲染列表 ==================== */
-// 将记忆数组渲染为HTML卡片列表，显示在右侧区域
-// 参数：items记忆数组，isSearch是否为搜索结果（影响样式和空状态图标）
-// 流程：遍历items → 生成HTML字符串 → 设置innerHTML
-// 空状态：数组为空时显示空状态图标和提示文字
-function renderList(items, isSearch) {
-  const el = document.getElementById('memoryList');
+function renderList(items, isSearch, containerId) {
+  var el = document.getElementById(containerId || 'memoryList');
   if (!el) return;
   if (!items.length) {
-    el.innerHTML = `<div class="empty">
-      <div class="empty-icon">${isSearch ? '🔍' : '🧠'}</div>
-      <div class="empty-text">${isSearch ? '没有找到相关记忆' : '还没有任何记忆'}</div>
-    </div>`;
+    el.innerHTML = '<div class="empty"><div class="empty-icon">' + (isSearch ? '🔍' : '🧠') + '</div><div class="empty-text">' + (isSearch ? '没有找到相关记忆' : '还没有任何记忆') + '</div></div>';
     return;
   }
-  el.innerHTML = items.map(m => `
-    <div class="memory-card ${isSearch ? 'search-result' : ''}">
-      <div class="memory-content">
-        <div class="memory-text">${escHtml(m.text)}</div>
-        <div class="memory-meta">
-          <span class="memory-time">🕐 ${formatTime(m.timestamp)}</span>
-          ${m.score !== undefined ? `<span class="memory-score">相似度 ${(m.score*100).toFixed(1)}%</span>` : ''}
-          ${m.hit_count !== undefined ? `<span class="memory-hits">${m.hit_count}</span>` : ''}
-          ${m.decay_score !== undefined ? `<span class="memory-decay">${m.decay_score.toFixed(2)}</span>` : ''}
-          <span class="memory-id">${(m.id||'').slice(0,8)}...</span>
-        </div>
-      </div>
-      <button class="del-btn" onclick="deleteMemory('${m.id}')" title="删除">✕</button>
-    </div>
-  `).join('');
-}
-
-/* ==================== 更新列表标题 ==================== */
-// 修改右侧列表区域的标题文字，用于显示当前搜索关键词
-function updateListTitle(title) {
-  const el = document.getElementById('listTitle');
-  if (el) el.textContent = title;
+  el.innerHTML = items.map(m =>
+    '<div class="memory-card ' + (isSearch ? 'search-result' : '') + '">' +
+      '<div class="memory-content">' +
+        '<div class="memory-text">' + escHtml(m.text) + '</div>' +
+        '<div class="memory-meta">' +
+          '<span class="memory-time">' + formatTime(m.timestamp) + '</span>' +
+          (m.score !== undefined ? '<span class="memory-score">相似度 ' + (m.score*100).toFixed(1) + '%</span>' : '') +
+          '<span class="memory-id">' + (m.id||'').slice(0,8) + '...</span>' +
+        '</div>' +
+      '</div>' +
+      '<button class="del-btn" onclick="deleteMemory(\'' + m.id + '\')" title="删除">✕</button>' +
+    '</div>'
+  ).join('');
 }
 
 /* ==================== 工具函数 ==================== */
-// 时间格式化：将时间戳转换为"MM-DD HH:mm"格式
-// 使用toLocaleString并指定中文 locale 确保格式一致
 function formatTime(ts) {
   if (!ts) return '';
   try { return new Date(ts).toLocaleString('zh-CN', {month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'}); }
   catch { return ts.slice(0,16); }
 }
 
-/* ==================== 加载搜索历史 ==================== */
-// 从API获取搜索历史记录，渲染到侧边栏
+/* ==================== 搜索历史 ==================== */
 async function loadSearchHistory() {
-  console.log('[memory] loadSearchHistory start');
   try {
     const r = await fetch(API + '/search-history');
     const data = await r.json();
     searchHistory = (data.history || []).map(h => h.query);
-    console.log('[memory] search history:', searchHistory.length, 'items');
-    renderSearchHistory();
-  } catch(e) { console.error('[memory] loadSearchHistory error:', e); }
-}
-
-/* ==================== 搜索历史 ==================== */
-// 添加搜索历史：调用API保存到数据库，然后更新本地数组并重新渲染
-// 后端会自动去重并保持最多20条
-async function addSearchHistory(query) {
-  try {
-    await api('/search-history', {query});
-    searchHistory = searchHistory.filter(h => h !== query);  // 移除已存在的相同记录
-    searchHistory.unshift(query);                               // 添加到数组开头
-    searchHistory = searchHistory.slice(0, 20);                // 限制最多20条
     renderSearchHistory();
   } catch(e) { console.error(e); }
 }
 
-// 渲染搜索历史：将本地searchHistory数组生成HTML显示在侧边栏
-// 每个历史项绑定onclick事件，点击时调用searchFromHistory重新搜索
 function renderSearchHistory() {
   const el = document.getElementById('searchHistory');
   if (!el) return;
   if (!searchHistory.length) {
-    el.innerHTML = '<div style="font-size:12px;color:#64748b">暂无搜索历史</div>';
+    el.innerHTML = '<div class="sh-empty">暂无搜索历史</div>';
     return;
   }
-  el.innerHTML = searchHistory.map(h => `<div class="history-item" onclick="searchFromHistory('${escHtml(h)}')">🔍 ${escHtml(h)}</div>`).join('');
+  el.innerHTML = searchHistory.map(h =>
+    '<div class="history-item" onclick="searchFromHistory(\'' + escHtml(h) + '\')">' + escHtml(h) + '</div>'
+  ).join('');
 }
 
-// 从历史记录搜索：将历史项的关键词填入搜索框并触发搜索
-// 流程：设置输入框value → 调用searchMemory()
 function searchFromHistory(query) {
   document.getElementById('searchInput').value = query;
+  closeSearchHistory();
   searchMemory();
+}
+
+function toggleSearchHistory() {
+  var dd = document.getElementById('searchHistoryDropdown');
+  if (!dd) return;
+  var isOpen = dd.style.display !== 'none';
+  dd.style.display = isOpen ? 'none' : '';
+  if (!isOpen) renderSearchHistory();
+}
+
+function closeSearchHistory() {
+  var dd = document.getElementById('searchHistoryDropdown');
+  if (dd) dd.style.display = 'none';
+}
+
+async function clearSearchHistory() {
+  try {
+    await fetch(API + '/search-history', {method: 'DELETE'});
+    searchHistory = [];
+    renderSearchHistory();
+  } catch(e) { console.error(e); }
+}
+
+// 点击外部关闭下拉
+document.addEventListener('click', function(e) {
+  var wrap = document.querySelector('.search-history-wrap');
+  if (wrap && !wrap.contains(e.target)) closeSearchHistory();
+});
+
+/* ==================== 记忆整理 ==================== */
+async function startOrganize() {
+  if (_organizeBusy) return;
+  _organizeBusy = true;
+  _saveOrganizeState();
+  var btn = document.getElementById('organizeBtn');
+  if (btn) { btn.disabled = true; btn.textContent = '分析中...'; }
+  var contentEl = document.getElementById('organizeContent');
+  contentEl.innerHTML = '<div class="organize-loading">正在分析记忆相似度...</div>';
+
+  var threshold = parseFloat(document.getElementById('dedupThreshold').value) || 0.85;
+  try {
+    var r = await api('/organize/dedup', {similarity_threshold: threshold});
+    if (r.error) { contentEl.innerHTML = '<div class="organize-loading">错误: ' + escHtml(r.error) + '</div>'; _organizeBusy = false; _saveOrganizeState(); if (btn) { btn.disabled = false; btn.textContent = '分析'; } return; }
+    organizeGroups = r.groups || [];
+    _saveOrganizeState();
+    var total = r.total_memories || 0;
+    var grouped = r.grouped_count || 0;
+
+    if (!organizeGroups.length) {
+      contentEl.innerHTML = '<div class="empty"><div class="empty-icon">✅</div><div class="empty-text">没有发现重复的记忆（共 ' + total + ' 条）</div></div>';
+      _organizeBusy = false; _saveOrganizeState(); if (btn) { btn.disabled = false; btn.textContent = '分析'; }
+      return;
+    }
+
+    // 渲染分组
+    var html = '<div class="organize-header"><span>共 ' + total + ' 条，发现 ' + organizeGroups.length + ' 组相似（' + grouped + ' 条）</span></div>';
+    html += '<div class="organize-groups" id="organizeGroups">';
+    html += organizeGroups.map(function(g, gi) {
+      var items = g.memories.map(function(m, mi) { return '<div class="og-item"><span class="og-idx">' + (mi+1) + '</span>' + escHtml(m.text) + '</div>'; }).join('');
+      return '<div class="organize-group-card">' +
+        '<div class="og-label">组 ' + (gi+1) + ' · 相似度 ' + g.similarity + ' · ' + g.memories.length + ' 条' +
+        '<button class="btn-secondary-sm og-refine-btn" onclick="refineGroup(' + gi + ')">精炼此组</button></div>' +
+        items + '</div>';
+    }).join('');
+    html += '</div><div id="organizeRefined" class="organize-refined"></div>';
+    contentEl.innerHTML = html;
+    _organizeBusy = false; _saveOrganizeState(); if (btn) { btn.disabled = false; btn.textContent = '分析'; }
+  } catch(e) {
+    contentEl.innerHTML = '<div class="organize-loading">请求失败: ' + escHtml(e.message) + '</div>';
+    _organizeBusy = false; _saveOrganizeState(); if (btn) { btn.disabled = false; btn.textContent = '分析'; }
+  }
+}
+
+async function refineGroup(groupIndex) {
+  if (!organizeGroups[groupIndex]) return;
+
+  // 检查该组是否已精炼
+  var existing = organizeRefined.find(function(r) { return r.group_id === groupIndex; });
+  if (existing) { toast('该组已精炼', 'info'); return; }
+
+  // 在对应卡片上显示加载状态
+  var card = document.querySelectorAll('.organize-group-card')[groupIndex];
+  if (!card) return;
+  var btn = card.querySelector('.og-refine-btn');
+  if (btn) { btn.disabled = true; btn.textContent = '精炼中...'; }
+
+  try {
+    var r = await api('/organize/refine', {groups: [organizeGroups[groupIndex]]});
+    if (r.error) { toast('精炼失败: ' + r.error, 'error'); if (btn) { btn.disabled = false; btn.textContent = '精炼此组'; } return; }
+    var newRefined = r.refined || [];
+    newRefined.forEach(function(item) { item.group_id = groupIndex; });
+    organizeRefined = organizeRefined.concat(newRefined);
+    _saveOrganizeState();
+
+    // 在卡片内插入精炼结果
+    var refineIdx = organizeRefined.length - newRefined.length; // 索引基址
+    newRefined.forEach(function(item, ri) {
+      var idx = refineIdx + ri;
+      var div = document.createElement('div');
+      div.className = 'og-refine-result';
+      var refinedClass = item.refined ? 'refined' : '';
+      div.innerHTML =
+        '<div class="og-refine-divider"></div>' +
+        '<div class="og-refine-label ' + refinedClass + '">精炼结果' + (item.refined ? '' : '（降级）') + '</div>' +
+        '<div class="organize-refined-text" contenteditable="true" id="refinedText' + idx + '">' + escHtml(item.refined_text) + '</div>' +
+        '<div class="organize-category">分类: ' + escHtml(item.category || 'unknown') + '</div>' +
+        '<div class="og-refine-actions">' +
+        '<div class="organize-check"><input type="checkbox" id="refinedCheck' + idx + '" checked><label for="refinedCheck' + idx + '">确认合并</label></div>' +
+        '<button class="btn btn-sm btn-primary" onclick="applySingleRefine(' + idx + ')">确认修改</button></div>';
+      card.appendChild(div);
+    });
+
+    if (btn) { btn.textContent = '已精炼'; btn.disabled = true; }
+    updateRefineFooter();
+  } catch(e) {
+    toast('精炼失败: ' + e.message, 'error');
+    if (btn) { btn.disabled = false; btn.textContent = '精炼此组'; }
+  }
+}
+
+async function applySingleRefine(refineIndex) {
+  var item = organizeRefined[refineIndex];
+  if (!item) return;
+  var textEl = document.getElementById('refinedText' + refineIndex);
+  var newText = textEl ? textEl.innerText.trim() : item.refined_text;
+  if (!newText) { toast('精炼内容为空', 'error'); return; }
+
+  try {
+    var r = await api('/organize/apply', {items: [{delete_ids: item.original_ids, new_text: newText, category: item.category || 'reference'}]});
+    if (r.error) { toast('写入失败: ' + r.error, 'error'); return; }
+    toast('已合并该组记忆（删除 ' + item.original_ids.length + ' 条，新增 1 条）');
+
+    // 从数据中移除已写入的项
+    var gid = item.group_id;
+    organizeRefined = organizeRefined.filter(function(_, i) { return i !== refineIndex; });
+    if (_appliedGroups.indexOf(gid) === -1) _appliedGroups.push(gid);
+    _saveOrganizeState();
+
+    // 移除该卡片中的精炼结果区域
+    var card = document.querySelectorAll('.organize-group-card')[gid];
+    if (card) {
+      var resultEl = card.querySelector('.og-refine-result');
+      if (resultEl) resultEl.remove();
+      // 整个卡片标记为已完成
+      card.classList.add('og-applied');
+      var refineBtn = card.querySelector('.og-refine-btn');
+      if (refineBtn) { refineBtn.textContent = '已写入'; refineBtn.disabled = true; }
+    }
+
+    updateRefineFooter();
+
+    // 全部写完则重置
+    if (!organizeRefined.length && organizeGroups.length) {
+      var allApplied = document.querySelectorAll('.organize-group-card.og-applied').length === organizeGroups.length;
+      if (allApplied) {
+        organizeGroups = [];
+        organizeRefined = [];
+        _appliedGroups = [];
+        _saveOrganizeState();
+        document.getElementById('organizeContent').innerHTML = '<div class="empty"><div class="empty-icon">✅</div><div class="empty-text">整理完成</div></div>';
+        loadAll();
+      }
+    }
+  } catch(e) { toast('写入失败: ' + e.message, 'error'); }
+}
+
+function refineAllGroups() {
+  if (!organizeGroups.length) return;
+  var unrefinedIndices = [];
+  for (var i = 0; i < organizeGroups.length; i++) {
+    if (!organizeRefined.find(function(r) { return r.group_id === i; })) {
+      unrefinedIndices.push(i);
+    }
+  }
+  if (!unrefinedIndices.length) { toast('所有组已精炼', 'info'); return; }
+  unrefinedIndices.forEach(function(idx) { refineGroup(idx); });
+}
+
+// 更新底部操作栏
+function updateRefineFooter() {
+  var footer = document.getElementById('organizeRefined');
+  if (!footer) return;
+  if (!organizeRefined.length) { footer.innerHTML = ''; return; }
+  var unrefinedCount = 0;
+  for (var i = 0; i < organizeGroups.length; i++) {
+    if (!organizeRefined.find(function(r) { return r.group_id === i; })) unrefinedCount++;
+  }
+  var html = '<div class="organize-footer-bar">' +
+    '<span class="organize-footer-stat">已精炼 ' + organizeRefined.length + '/' + organizeGroups.length + ' 组</span>' +
+    '<div class="organize-actions">' +
+    (unrefinedCount > 0 ? '<button class="btn-secondary-sm" onclick="refineAllGroups()">精炼剩余 ' + unrefinedCount + ' 组</button>' : '') +
+    '<button class="btn btn-sm btn-primary" onclick="applyOrganize()">确认写入</button></div></div>';
+  footer.innerHTML = html;
+}
+
+async function applyOrganize() {
+  if (!organizeRefined.length) return;
+  var items = [];
+  for (var i = 0; i < organizeRefined.length; i++) {
+    var check = document.getElementById('refinedCheck' + i);
+    if (!check || !check.checked) continue;
+    var textEl = document.getElementById('refinedText' + i);
+    var newText = textEl ? textEl.innerText.trim() : organizeRefined[i].refined_text;
+    if (!newText) continue;
+    items.push({delete_ids: organizeRefined[i].original_ids, new_text: newText, category: organizeRefined[i].category || 'reference'});
+  }
+  if (!items.length) { toast('没有勾选任何项', 'error'); return; }
+  try {
+    var r = await api('/organize/apply', {items: items});
+    if (r.error) { toast('写入失败: ' + r.error, 'error'); return; }
+    toast('已合并 ' + r.applied + ' 组记忆（删除 ' + r.deleted + ' 条，新增 ' + r.added + ' 条）');
+    organizeGroups = [];
+    organizeRefined = [];
+    _saveOrganizeState();
+    document.getElementById('organizeContent').innerHTML = '<div class="empty"><div class="empty-icon">✅</div><div class="empty-text">整理完成</div></div>';
+    loadAll();
+  } catch(e) { toast('写入失败: ' + e.message, 'error'); }
 }

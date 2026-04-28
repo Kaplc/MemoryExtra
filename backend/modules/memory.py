@@ -4,7 +4,8 @@ from flask import request, jsonify
 
 from modules.brain.memory import (
     store_memory, search_memory, list_memories,
-    delete_memory, update_memory, organize_memories
+    delete_memory, update_memory, organize_memories,
+    dedup_memories, refine_memories, apply_organize
 )
 
 logger = logging.getLogger('memory')
@@ -170,4 +171,46 @@ def register(app, stats_db):
             stats_db.append_stream('organize', query=query, total=result.get('total_found', 0))
             return jsonify(result)
         except Exception as e:
+            return jsonify({"error": str(e)})
+
+    # ── 记忆整理（三步流程）─────────────────────────────────────
+    @app.route('/organize/dedup', methods=['POST'])
+    def organize_dedup():
+        """第一步：全量 embedding 去重分组"""
+        data = request.get_json() or {}
+        threshold = data.get('similarity_threshold', 0.85)
+        try:
+            result = dedup_memories(threshold)
+            return jsonify(result)
+        except Exception as e:
+            logger.error(f"[organize/dedup] 失败: {e}")
+            return jsonify({"error": str(e), "groups": []})
+
+    @app.route('/organize/refine', methods=['POST'])
+    def organize_refine():
+        """第二步：LLM 精炼合并"""
+        data = request.get_json() or {}
+        groups = data.get('groups', [])
+        if not groups:
+            return jsonify({"error": "没有需要精炼的分组", "refined": []})
+        try:
+            result = refine_memories(groups)
+            return jsonify(result)
+        except Exception as e:
+            logger.error(f"[organize/refine] 失败: {e}")
+            return jsonify({"error": str(e), "refined": []})
+
+    @app.route('/organize/apply', methods=['POST'])
+    def organize_apply():
+        """第三步：用户确认后写入"""
+        data = request.get_json() or {}
+        items = data.get('items', [])
+        if not items:
+            return jsonify({"error": "没有需要写入的项目"})
+        try:
+            result = apply_organize(items)
+            stats_db.append_stream('organize', action='apply', applied=result['applied'], deleted=result['deleted'], added=result['added'])
+            return jsonify(result)
+        except Exception as e:
+            logger.error(f"[organize/apply] 失败: {e}")
             return jsonify({"error": str(e)})

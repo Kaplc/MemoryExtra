@@ -170,3 +170,59 @@ def organize_memories(query: str) -> dict:
     result["new_memory_id"] = new_ids[0] if new_ids else None
 
     return result
+
+
+def dedup_memories(threshold: float = 0.85) -> dict:
+    """全量记忆去重分组（两步法第一步）"""
+    from .dedup import dedup_memories as _dedup
+    return _dedup(threshold)
+
+
+def refine_memories(groups: list[dict]) -> dict:
+    """LLM 精炼合并相似记忆组（两步法第二步）"""
+    from .llm import refine_group
+
+    refined = []
+    for group in groups:
+        result = refine_group(group["memories"])
+        result["group_id"] = group.get("group_id", 0)
+        refined.append(result)
+
+    return {"refined": refined}
+
+
+def apply_organize(items: list[dict]) -> dict:
+    """用户确认后写入整理结果（删旧存新）"""
+    applied = 0
+    deleted = 0
+    added = 0
+    details = []
+
+    for item in items:
+        delete_ids = item.get("delete_ids", [])
+        new_text = item.get("new_text", "").strip()
+
+        if not new_text:
+            continue
+
+        # 先删旧
+        for mem_id in delete_ids:
+            try:
+                delete_memory(mem_id)
+                deleted += 1
+            except Exception as e:
+                logger.warning(f"[apply] 删除失败 {mem_id}: {e}")
+
+        # 再存新
+        try:
+            res = store_memory(new_text)
+            added += 1
+            new_id = res.get("stored_texts", [""])[0] if res.get("stored_texts") else ""
+            details.append({"deleted_ids": delete_ids, "new_id": new_id, "new_text": new_text})
+        except Exception as e:
+            logger.warning(f"[apply] 存储失败: {e}")
+            details.append({"deleted_ids": delete_ids, "new_id": "", "new_text": new_text, "error": str(e)})
+
+        applied += 1
+
+    return {"applied": applied, "deleted": deleted, "added": added, "details": details}
