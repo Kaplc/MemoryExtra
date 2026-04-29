@@ -141,6 +141,13 @@ class StatsDB:
         db.commit()
         db.close()
 
+    def update_stream_content(self, rowid, content):
+        """更新流记录的内容（如保存成功后替换为实际存储的事实）"""
+        db = self._get_conn()
+        db.execute('UPDATE stream SET content=? WHERE id=?', (content, rowid))
+        db.commit()
+        db.close()
+
     def query_stream(self, action=None, limit=50):
         """查询最近的操作流，最新的在前面"""
         db = self._get_conn()
@@ -153,6 +160,27 @@ class StatsDB:
             rows = db.execute(
                 'SELECT id, action, content, memory_id, created_at, status FROM stream ORDER BY id DESC LIMIT ?',
                 (limit,)
+            ).fetchall()
+        db.close()
+        return [dict(r) for r in rows]
+
+    def query_stream_days(self, action=None, days=3):
+        """查询最近 N 天内的所有操作流"""
+        db = self._get_conn()
+        cutoff = f"{-days} days"
+        if action:
+            rows = db.execute(
+                "SELECT id, action, content, memory_id, created_at, status "
+                "FROM stream WHERE action=? AND created_at >= datetime('now','localtime',?) "
+                "ORDER BY id DESC",
+                (action, cutoff)
+            ).fetchall()
+        else:
+            rows = db.execute(
+                "SELECT id, action, content, memory_id, created_at, status "
+                "FROM stream WHERE created_at >= datetime('now','localtime',?) "
+                "ORDER BY id DESC",
+                (cutoff,)
             ).fetchall()
         db.close()
         return [dict(r) for r in rows]

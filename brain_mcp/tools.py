@@ -39,12 +39,27 @@ def store_memory(text: str) -> str:
         raise RuntimeError(result["error"])
     # 异步模式：立即返回，实际存储在后台
     if "rowid" in result:
-        return f"已提交后台保存（#{result['rowid']}）"
+        rowid = result['rowid']
+        # 显示提交内容预览
+        preview = _preview_text(text)
+        return f"已提交后台保存（#{rowid}）\n内容: {preview}"
     # 同步模式 fallback（兼容旧版）
     texts = result.get("stored_texts", [])
     if texts:
         return "已记住:\n" + "\n".join(f"  • {t}" for t in texts)
     return f"已记住:\n  • {text}"
+
+
+def _preview_text(text: str, max_len: int = 120) -> str:
+    """截取文本预览，保留完整句子"""
+    if len(text) <= max_len:
+        return text
+    # 尝试在句号/换行处截断
+    for sep in ('\n', '。', '. ', ';', '；'):
+        cut = text.rfind(sep, 0, max_len)
+        if cut > max_len * 0.5:
+            return text[:cut + len(sep)] + '...'
+    return text[:max_len] + '...'
 
 
 def search_memory(query: str) -> list[dict]:

@@ -7,17 +7,24 @@ import shutil
 import time as _time
 
 
-def setup_logger(project_root):
-    """初始化日志系统，返回 logger 实例"""
+def setup_logger(project_root, role='app'):
+    """初始化日志系统，返回 logger 实例
+
+    Args:
+        project_root: 项目根目录
+        role: 进程角色标识 ('flask' | 'ui' | 'app')，
+              用于区分双进程模式的日志文件名
+    """
     log_dir = os.path.join(project_root, 'logs')
     os.makedirs(log_dir, exist_ok=True)
 
-    # 先归档旧日志，再创建新的
-    _roll_logs(log_dir)
+    # 按进程角色命名日志文件，避免多进程写入冲突
+    prefix = 'flask' if role == 'flask' else ('ui' if role == 'ui' else 'app')
 
-    # 确保归档完成后再创建新日志文件
-    log_file = os.path.join(log_dir, f'app_{_time.strftime("%Y%m%d_%H%M%S")}.log')
-    print(f"[logger] Creating new log file: {os.path.basename(log_file)}")
+    # 先归档旧日志，再创建新的
+    _roll_logs(log_dir, prefix=prefix)
+    log_file = os.path.join(log_dir, f'{prefix}_{_time.strftime("%Y%m%d_%H%M%S")}.log')
+    print(f"[logger] Creating new log file ({role}): {os.path.basename(log_file)}")
     sys.stdout.flush()
 
     handler = logging.FileHandler(log_file, encoding='utf-8')
@@ -37,13 +44,13 @@ def setup_logger(project_root):
     return log
 
 
-def _roll_logs(log_dir):
+def _roll_logs(log_dir, prefix='app'):
     """日志文件归档：启动时将现有的所有日志文件归档，归档目录最多保留6个文件"""
     archive_dir = os.path.join(log_dir, 'archive')
     os.makedirs(archive_dir, exist_ok=True)
 
-    # 查找所有日志文件（不包括归档目录中的）
-    pattern = os.path.join(log_dir, 'app_*.log')
+    # 查找当前角色的日志文件（不包括归档目录中的）
+    pattern = os.path.join(log_dir, f'{prefix}_*.log')
     files = glob.glob(pattern)
 
     print(f"[logger] Found {len(files)} log files to archive: {[os.path.basename(f) for f in files]}")
@@ -82,14 +89,19 @@ def _roll_logs(log_dir):
                     print(f"[logger] Successfully copied and removed: {filename}")
                     sys.stdout.flush()
                 except Exception as copy_err:
-                    print(f"[logger] Copy also failed: {copy_err}")
-                    sys.stdout.flush()
+                    # 文件被其他进程占用（如 reloader 父进程），跳过不报错
+                    if 'being used' in str(copy_err) or 'in use' in str(copy_err).lower():
+                        print(f"[logger] File in use by another process, skipping: {filename}")
+                        sys.stdout.flush()
+                    else:
+                        print(f"[logger] Copy also failed: {copy_err}")
+                        sys.stdout.flush()
                     continue
         except Exception as e:
             print(f"[logger] Archive failed for {f}: {e}")
 
     # 清理归档目录，最多保留3个归档文件（删除最旧的）
-    archive_files = sorted(glob.glob(os.path.join(archive_dir, 'app_*.log')),
+    archive_files = sorted(glob.glob(os.path.join(archive_dir, f'{prefix}_*.log')),
                            key=os.path.getmtime, reverse=True)
     print(f"[logger] Archive directory has {len(archive_files)} files, keeping newest 3")
     sys.stdout.flush()

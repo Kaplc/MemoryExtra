@@ -9,34 +9,27 @@ import asyncio
 import logging
 import functools
 import re
+import threading
 import numpy as np
 
 logger = logging.getLogger(__name__)
 
 _rag_instance = None
+_rag_lock = threading.Lock()  # 全局锁：防止并发查询导致 LightRAG 死锁
 
 
 def _run_async(coro):
-    """在同步上下文中运行异步协程"""
-    try:
-        loop = asyncio.get_running_loop()
-    except RuntimeError:
-        loop = None
-
-    if loop and loop.is_running():
-        import concurrent.futures
-        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
-            return pool.submit(asyncio.run, coro).result()
-    else:
-        return asyncio.run(coro)
+    """在同步上下文中运行异步协程（每次创建新event loop避免锁冲突）"""
+    import concurrent.futures
+    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+        return pool.submit(asyncio.run, coro).result()
 
 
 def _load_llm_config() -> dict:
-    """加载 LLM 配置。优先 wiki.json 的 llm 字段，api_key 可从 mem0.json 继承"""
+    """加载 LLM 配置。支持嵌套格式(llm.{})和扁平格式(llm_provider等)，api_key 可从 mem0.json 继承"""
     from .config import load_wiki_config
 
     wiki_cfg = load_wiki_config()
-    llm_cfg = wiki_cfg.get("llm", {})
 
     # 读取 mem0.json（用于 fallback 或继承 api_key）
     mem0_cfg = {}
@@ -45,15 +38,30 @@ def _load_llm_config() -> dict:
         with open(mem0_path, "r", encoding="utf-8") as f:
             mem0_cfg = json.load(f)
 
-    # wiki.json 有 provider 配置时，优先使用
+    # === 兼容嵌套格式: { "llm": { "provider": "...", "api_key": "..." } } ===
+    llm_cfg = wiki_cfg.get("llm", {})
     if llm_cfg.get("provider"):
-        # api_key：wiki.json > mem0.json
         api_key = llm_cfg.get("api_key") or mem0_cfg.get("api_key", "")
         return {
             "llm_provider": llm_cfg["provider"],
             "llm_model": llm_cfg.get("model", ""),
             "api_key": api_key,
             "base_url": llm_cfg.get("base_url", ""),
+        }
+
+    # === 兼容扁平格式: { "llm_provider": "...", "llm_api_key": "..." } ===
+    flat_provider = wiki_cfg.get("llm_provider") or wiki_cfg.get("llm_provider")
+    if flat_provider:
+        api_key = (
+            wiki_cfg.get("llm_api_key")
+            or wiki_cfg.get("api_key")
+            or mem0_cfg.get("api_key", "")
+        )
+        return {
+            "llm_provider": flat_provider,
+            "llm_model": wiki_cfg.get("llm_model", ""),
+            "api_key": api_key,
+            "base_url": wiki_cfg.get("llm_base_url", ""),
         }
 
     # 完全没配置 wiki llm，fallback 到 mem0.json
@@ -211,15 +219,26 @@ def get_rag():
 
 def _create_rag():
     """创建 LightRAG 实例"""
+    import time as _t
+    t0 = _t.time()
+    logger.info("[TRACE] _create_rag() 开始")
+
     from lightrag import LightRAG
     from .config import load_wiki_config, get_lightrag_dir
 
+    t1 = _t.time()
     cfg = load_wiki_config()
+    logger.info(f"[TRACE] load_wiki_config 耗时 {(_t.time()-t1):.2f}s")
+
+    t2 = _t.time()
     llm_cfg = _load_llm_config()
+    logger.info(f"[TRACE] _load_llm_config 耗时 {(_t.time()-t2):.2f} provider={llm_cfg.get('llm_provider')} model={llm_cfg.get('llm_model')}")
+
     lightrag_dir = get_lightrag_dir()
 
     os.makedirs(lightrag_dir, exist_ok=True)
 
+    t3 = _t.time()
     rag = LightRAG(
         working_dir=lightrag_dir,
         embedding_func=_build_embedding_func(),
@@ -233,14 +252,17 @@ def _create_rag():
         vector_storage="NanoVectorDBStorage",
         graph_storage="NetworkXStorage",
     )
+    t_rag_create = _t.time() - t3
+    logger.info(f"[TRACE] LightRAG() 构造耗时 {t_rag_create:.2f}s")
 
+    t4 = _t.time()
     _run_async(rag.initialize_storages())
-
+    t_init = _t.time() - t4
+    total = _t.time() - t0
     logger.info(
-        f"LightRAG 初始化完成 (working_dir={lightrag_dir}, "
-        f"provider={llm_cfg.get('llm_provider')}, "
-        f"model={llm_cfg.get('llm_model')}, "
-        f"language={cfg.get('language', 'Chinese')})"
+        f"[TRACE] _create_rag() 完成 | "
+        f"config={_t.time()-t1:.2f}s llm={_t.time()-t2:.2f}s "
+        f"LightRAG={t_rag_create:.2f}s init_storages={t_init:.2f}s total={total:.2f}s"
     )
     return rag
 
@@ -255,16 +277,73 @@ def insert_document(text: str, file_path: str | None = None) -> str:
 
 
 def query_wiki_context(question: str, mode: str = "hybrid") -> str:
-    """查询 wiki，仅返回检索到的上下文（不经过 LLM 生成）"""
+    """查询 wiki，仅返回检索到的上下文（不经过 LLM 生成）
+
+    使用 _rag_lock 保证线程安全 + 超时检测自动重建 RAG 实例
+    （LightRAG query() 存在首次后卡死的已知问题）
+    """
+    global _rag_instance  # 提前声明，用于后续重建
+    import time as _t
+    import concurrent.futures
+    t_start = _t.time()
+    logger.info(f"[TRACE] query_wiki_context 开始 | question={question[:50]} mode={mode}")
+
     from lightrag.base import QueryParam
 
+    # === 跟踪: RAG 初始化 ===
+    t0 = _t.time()
     rag = get_rag()
+    t_rag = _t.time() - t0
+    logger.info(f"[TRACE] get_rag() 耗时 {t_rag:.2f}s")
+
     valid_modes = ("naive", "local", "global", "hybrid", "mix")
     if mode not in valid_modes:
         mode = "hybrid"
 
     param = QueryParam(mode=mode, only_need_context=True)
-    return rag.query(question, param=param)
+
+    # === 使用全局锁 + 线程超时保护查询 ===
+    t1 = _t.time()
+    acquired = _rag_lock.acquire(timeout=60)
+    if not acquired:
+        logger.error("[RAG] 无法获取 RAG 查询锁（60s超时），强制重建")
+        _rag_instance = None
+        rag = _create_rag()
+        _rag_lock.acquire()
+    try:
+        # 用 ThreadPoolExecutor 执行 query，支持超时检测
+        # LightRAG 已知问题：首次查询成功后后续可能永久阻塞
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+            future = pool.submit(rag.query, question, param)
+            try:
+                result = future.result(timeout=25)  # 25秒超时
+            except concurrent.futures.TimeoutError:
+                logger.warning("[RAG] query() 超时(25s)，检测到 LightRAG 卡死，重建实例重试")
+                future.cancel()
+                # 重建 RAG 实例
+                _rag_instance = None
+                rag = _create_rag()
+                # 重试一次（新实例应该能正常工作）
+                result = rag.query(question, param=param)
+            except RuntimeError as e:
+                if "event loop" in str(e) or "lock" in str(e).lower():
+                    logger.warning(f"[RAG] event loop冲突，重建RAG: {e}")
+                    _rag_instance = None
+                    rag = _create_rag()
+                    result = rag.query(question, param=param)
+                else:
+                    raise
+    finally:
+        _rag_lock.release()
+
+    t_query = _t.time() - t1
+    total = _t.time() - t_start
+    result_len = len(result) if result else 0
+    logger.info(
+        f"[TRACE] query_wiki_context 完成 | mode={mode} "
+        f"rag_init={t_rag:.2f}s query={t_query:.2f}s total={total:.2f}s result_len={result_len}"
+    )
+    return result
 
 
 def delete_document(doc_id: str) -> dict:

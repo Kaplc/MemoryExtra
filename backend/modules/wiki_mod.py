@@ -9,6 +9,7 @@
   [RAG←]  RAG 引擎返回
 """
 from flask import request, jsonify
+import json
 import logging
 import time as _time
 import os
@@ -34,7 +35,7 @@ def register(app, stats_db=None):
         t0 = _time.time()
         data = request.get_json() or {}
         query = data.get('query', '').strip()
-        mode = data.get('mode', 'hybrid')
+        mode = data.get('mode', 'naive')
         logger.info(f"[API→] /wiki/search | query={query[:50]} mode={mode}")
         if not query:
             logger.warning("[API⚠] /wiki/search query 为空")
@@ -48,6 +49,9 @@ def register(app, stats_db=None):
             if mode == "naive":
                 logger.info("[RAG→] /wiki/search 调用 naive 模式")
                 t_rag0 = _time.time()
+                # === 跟踪: RAG 引擎是否已初始化 ===
+                from rag.lightrag_wiki.rag_engine import _rag_instance
+                logger.info(f"[TRACE] RAG单例状态: _rag_instance={'已创建' if _rag_instance else 'None'}")
                 result = query_wiki_context(query, mode="naive")
                 rag_elapsed = _time.time() - t_rag0
                 total = _time.time() - t0
@@ -80,7 +84,9 @@ def register(app, stats_db=None):
                     logger.warning(f"[API⚠] /wiki/search {mode} 返回空结果，降级 naive")
             except concurrent.futures.TimeoutError:
                 elapsed = _time.time() - t_rag0
-                logger.warning(f"[API⚠] /wiki/search {mode} 超时 ({timeout}s)，已耗时 {elapsed:.1f}s，降级 naive")
+                logger.warning(f"[API⚠] /wiki/search {mode} 超时 ({timeout}s)，已耗时 {elapsed:.1f}s，取消任务并降级 naive")
+                # 关键：超时后立即取消 Future 防止泄漏线程阻塞后续请求
+                future.cancel()
             except Exception as e:
                 elapsed = _time.time() - t_rag0
                 logger.warning(f"[API⚠] /wiki/search {mode} 失败: {e}，已耗时 {elapsed:.1f}s，降级 naive")
@@ -198,18 +204,33 @@ def register(app, stats_db=None):
             logger.error(f"[API✗] /wiki/log 失败: {e}")
             return jsonify({"error": str(e), "lines": []})
 
+    # 扁平 <-> 嵌套 LLM 字段映射
+    _LLM_FLAT_MAP = {
+        "provider": "llm_provider",
+        "model": "llm_model",
+        "api_key": "llm_api_key",
+        "base_url": "llm_base_url",
+    }
+
     @app.route('/wiki/settings', methods=['GET', 'POST'])
     def wiki_settings():
-        """读取/保存 Wiki 配置"""
+        """读取/保存 Wiki 配置。存储使用扁平格式，API 使用嵌套格式兼容前端"""
         try:
             from rag.lightrag_wiki.config import load_wiki_config, _get_config_path
 
             if request.method == 'GET':
                 cfg = load_wiki_config()
-                # 隐藏敏感字段
-                result = {k: v for k, v in cfg.items()}
-                if 'llm' in result and result['llm'].get('api_key'):
-                    result['llm']['api_key'] = '****'
+                # 扁平存储 → 嵌套返回给前端
+                llm_nested = {}
+                for nested_key, flat_key in _LLM_FLAT_MAP.items():
+                    val = cfg.get(flat_key, "")
+                    if val:
+                        llm_nested[nested_key] = val
+                result = {k: v for k, v in cfg.items() if not k.startswith("llm_")}
+                if llm_nested:
+                    result["llm"] = llm_nested
+                    if llm_nested.get("api_key"):
+                        result["llm"]["api_key"] = "****"
                 return jsonify(result)
 
             if request.method == 'POST':
@@ -224,19 +245,29 @@ def register(app, stats_db=None):
                     if key in data:
                         current[key] = data[key]
 
-                # LLM 配置（允许更新，但 api_key 为空时保留原值）
+                # LLM 配置：接收嵌套格式 → 转扁平存储
                 if 'llm' in data:
-                    old_llm = current.get('llm', {})
                     new_llm = data['llm']
-                    for k in ('provider', 'model', 'api_key', 'base_url'):
-                        if k in new_llm and new_llm[k]:
-                            old_llm[k] = new_llm[k]
-                        elif k == 'api_key' and not new_llm.get(k):
-                            pass  # 保留旧值
-                    current['llm'] = old_llm
+                    for nested_key, flat_key in _LLM_FLAT_MAP.items():
+                        new_val = new_llm.get(nested_key)
+                        if nested_key == 'api_key':
+                            # api_key 为空时保留原值
+                            current[flat_key] = new_val or current.get(flat_key, "")
+                        elif new_val:
+                            current[flat_key] = new_val
 
-                with open(config_path, 'w', encoding='utf-8') as f:
-                    json.dump(current, f, indent=2, ensure_ascii=False)
+                import tempfile
+                fd, tmp_path = tempfile.mkstemp(
+                    dir=os.path.dirname(config_path),
+                    suffix='.wiki_tmp.json',
+                )
+                try:
+                    with os.fdopen(fd, 'w', encoding='utf-8') as f:
+                        json.dump(current, f, indent=2, ensure_ascii=False)
+                    os.replace(tmp_path, config_path)
+                except Exception:
+                    os.unlink(tmp_path)
+                    raise
 
                 logger.info("[API←] /wiki/settings 已保存")
                 return jsonify({"ok": True})

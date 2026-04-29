@@ -71,15 +71,15 @@ def _api_call(path: str, data: dict | None = None, method: str = "POST") -> dict
 
 
 @mcp.tool()
-def wiki_search(query: str, mode: str = "hybrid") -> str:
-    """Search the wiki knowledge base. Tries LLM-enhanced mode first,
-    auto-falls back to vector search if LLM fails or times out.
+def wiki_search(query: str, mode: str = "naive") -> str:
+    """Search the wiki knowledge base.
 
     Args:
         query: The search question.
-        mode: Query mode - naive/local/global/hybrid/mix (default: hybrid).
-              hybrid=LLM keyword extraction + knowledge graph + vector (best quality),
-              naive=pure vector similarity (fast, no LLM needed).
+        mode: Query mode - naive/local/global/hybrid/mix (default: naive).
+              naive=pure vector similarity (fast 0.2s, no LLM needed, **recommended default**),
+              hybrid=LLM keyword extraction + knowledge graph + vector (best quality but slow ~30-60s),
+              local/global/mix=knowledge graph enhanced modes (require LLM).
     """
     t0 = _time.time()
     logger.info(f"[MCP→] wiki_search 调用开始 query={query[:50]} mode={mode}")

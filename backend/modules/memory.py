@@ -61,9 +61,14 @@ def register(app, stats_db):
         rowid = stats_db.append_stream('store', content=text, status='pending')
 
         def _bg_store():
-            """后台线程：执行实际存储并更新状态"""
+            """后台线程：执行实际存储并更新状态，用LLM提取后的事实替换原始文本"""
             try:
-                store_memory(text)
+                result = store_memory(text)
+                stored_texts = result.get("stored_texts", [])
+                # 用真正保存的内容替换记忆流中的原始文本
+                if stored_texts:
+                    new_content = "\n".join(f"• {t}" for t in stored_texts)
+                    stats_db.update_stream_content(rowid, new_content)
                 stats_db.record_action(added=1)
                 stats_db.update_stream_status(rowid, 'done')
             except Exception as e:

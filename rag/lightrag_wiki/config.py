@@ -31,13 +31,11 @@ def _ensure_config_file():
             "lightrag_dir": "rag/lightrag_data",
             "language": "Chinese",
             "chunk_token_size": 1200,
-            "llm": {
-                "provider": "",
-                "model": "",
-                "api_key": "",
-                "base_url": "",
-            },
-            "search_timeout": 30,
+            "llm_provider": "",
+            "llm_model": "",
+            "llm_api_key": "",
+            "llm_base_url": "",
+            "search_timeout": 120,
         }
         with open(config_path, "w", encoding="utf-8") as f:
             json.dump(default_config, f, indent=2, ensure_ascii=False)

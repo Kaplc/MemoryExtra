@@ -17,6 +17,11 @@ os.environ['TRANSFORMERS_OFFLINE'] = '1'
 _BASE = os.path.dirname(os.path.abspath(__file__))
 _PROJECT_ROOT = os.path.normpath(os.path.join(_BASE, '..'))
 sys.path.insert(0, _BASE)  # 让 core/modules 可被导入
+sys.path.insert(0, _PROJECT_ROOT)  # 让 brain_mcp/、rag/ 等可被导入
+# mcp_servers 下的子包也可被导入
+_MCP_DIR = os.path.join(_PROJECT_ROOT, 'mcp_servers')
+if _MCP_DIR not in sys.path:
+    sys.path.insert(0, _MCP_DIR)
 
 # ── 端口（由 start.bat 通过环境变量传入）────────────────
 _FLASK_PORT = int(os.environ.get('FLASK_PORT', '18765'))
@@ -33,7 +38,15 @@ from flask_cors import CORS
 
 # ── 初始化 core 模块 ──────────────────────────────────────
 from core.logger import setup_logger
-logger = setup_logger(_PROJECT_ROOT)
+
+# 在 import 前检测进程角色（用于日志文件命名）
+_log_role = 'app'
+if '--flask-only' in sys.argv:
+    _log_role = 'flask'
+elif '--webview-only' in sys.argv:
+    _log_role = 'ui'
+
+logger = setup_logger(_PROJECT_ROOT, role=_log_role)
 
 from core.database import StatsDB
 stats_db = StatsDB(os.path.join(_BASE, 'stats.db'))
@@ -289,53 +302,101 @@ threading.Thread(target=_preload, daemon=True).start()
 # ── 启动 ───────────────────────────────────────────────────
 
 def start_flask():
-    app.run(host='127.0.0.1', port=_FLASK_PORT, debug=False, use_reloader=False)
+    """Flask 服务
+
+    FLASK_RELOAD=1: use_reloader=True（仅独立使用 start_flask.py 时）
+    FLASK_RELOAD=0(默认): use_reloader=False（由 ProcessManager 管理重启）
+    """
+    _reload = os.environ.get('FLASK_RELOAD', '0') == '1'
+    if _reload:
+        logger.info("[Flask] Hot-reload: ON (use_reloader=True)")
+        app.run(
+            host='127.0.0.1',
+            port=_FLASK_PORT,
+            debug=False,
+            use_reloader=True,
+            reloader_interval=1,
+        )
+    else:
+        logger.info("[Flask] use_reloader=False (managed by ProcessManager)")
+        app.run(
+            host='127.0.0.1',
+            port=_FLASK_PORT,
+            debug=False,
+            use_reloader=False,
+        )
 
 
-if __name__ == '__main__':
-    # ── 写入 .port 文件（供 start.bat 单例检测用）───────
-    _port_file = os.path.join(_PROJECT_ROOT, '.port')
+def _start_file_watcher():
+    """文件变更监控：修改 backend/*.py 后自动重启进程（替代 Flask reloader）"""
+    reload_enabled = os.environ.get('FLASK_RELOAD', '1') == '1'
+    if not reload_enabled:
+        return
+
     try:
-        with open(_port_file, 'w') as pf:
-            pf.write(str(_FLASK_PORT))
-        logger.info(f"Port file written: {_FLASK_PORT}")
-    except Exception as e:
-        logger.warning(f"Failed to write port file: {e}")
+        from watchdog.observers import Observer
+        from watchdog.events import FileSystemEventHandler, FileModifiedEvent
+    except ImportError:
+        logger.info("[hot-reload] watchdog 未安装，跳过（pip install watchdog 启用）")
+        return
 
-    logger.info(f"Starting -> Flask:{_FLASK_PORT} Qdrant-HTTP:{_QDRANT_HTTP_PORT}")
+    watch_dir = os.path.join(_PROJECT_ROOT, 'backend')
+    _restart_pending = [False]
 
-    flask_thread = threading.Thread(target=start_flask, daemon=False)
-    flask_thread.start()
+    class _ReloadHandler(FileSystemEventHandler):
+        def on_modified(self, event):
+            if isinstance(event, FileModifiedEvent) and event.src_path.endswith('.py'):
+                if _restart_pending[0]:
+                    return
+                rel = os.path.relpath(event.src_path, _PROJECT_ROOT)
+                logger.warning(f"[hot-reload] 🔄 文件变更: {rel}，2秒后自动重启...")
+                _restart_pending[0] = True
+                import threading as _th
+                _th.Timer(2.0, self._do_restart).start()
 
-    # 等待 Flask 就绪
-    import urllib.request, time
-    logger.info('Waiting for Flask to be ready...')
-    for _ in range(30):
+        def _do_restart(self):
+            logger.warning("[hot-reload] 正在重启...")
+            os.execv(sys.executable, [sys.executable] + sys.argv)
+
+    observer = Observer()
+    observer.schedule(_ReloadHandler(), watch_dir, recursive=True)
+    observer.daemon = True
+    observer.start()
+    logger.info(f"[hot-reload] ✅ 文件监控已启动: {watch_dir} （改.py自动重启）")
+
+
+def _wait_and_start_ui():
+    """Bootstrap：等 Flask+Qdrant 就绪后启动 PyWebView 窗口（主线程）"""
+    import urllib.request, time as _time
+
+    # 等 Flask 就绪
+    logger.info('[bootstrap] Waiting for Flask...')
+    for _ in range(60):
         try:
             urllib.request.urlopen(f'http://127.0.0.1:{_FLASK_PORT}/health', timeout=2)
-            logger.info(f'Flask is ready on port {_FLASK_PORT}')
+            logger.info(f'[bootstrap] Flask ready on {_FLASK_PORT}')
             break
         except Exception:
-            time.sleep(0.5)
+            _time.sleep(0.5)
     else:
-        logger.error('Flask failed to start')
+        logger.error('[bootstrap] Flask failed to start')
+        os._exit(1)
 
-    # 等待 Qdrant 就绪（_preload 在后台线程中连接）
-    logger.info('Waiting for Qdrant...')
+    # 等 Qdrant 就绪
+    logger.info('[bootstrap] Waiting for Qdrant...')
     for _ in range(30):
         if _ready.get("qdrant"):
-            logger.info('Qdrant is ready')
+            logger.info('[bootstrap] Qdrant ready')
             break
-        time.sleep(1)
+        _time.sleep(1)
     else:
-        logger.error('Qdrant not ready after 30s, aborting startup')
-        print('ERROR: Qdrant connection failed. Please check Qdrant configuration.')
-        input('Press Enter to exit...')
-        os._exit(1)
+        logger.warning('[bootstrap] Qdrant not ready after 30s, continuing')
+
+    # 启动 PyWebView（必须在主线程！）
+    import webbrowser
 
     ui_path = os.path.join(os.path.dirname(__file__), '..', 'web', 'index.html')
     project_name = os.path.basename(_PROJECT_ROOT)
-    import webbrowser
 
     window = webview.create_window(
         title=f'Memory Manager - {project_name}',
@@ -351,34 +412,80 @@ if __name__ == '__main__':
 
     window.expose(open_in_browser)
 
-    # 窗口关闭时清理
     def on_window_close():
         logger.info('Window closed, shutting down...')
         try:
             _pf = os.path.join(_PROJECT_ROOT, '.port')
             if os.path.exists(_pf):
                 os.remove(_pf)
-                logger.info("Port file cleaned up")
         except Exception:
             pass
-
-        # 关闭 Qdrant 进程
         import subprocess
         try:
-            result = subprocess.run(
-                ['netstat', '-ano'], capture_output=True, text=True, timeout=5
-            )
+            result = subprocess.run(['netstat', '-ano'], capture_output=True, text=True, timeout=5)
             for line in result.stdout.splitlines():
                 if f':{_QDRANT_HTTP_PORT}' in line and 'LISTENING' in line:
                     pid = int(line.strip().split()[-1])
                     subprocess.run(['taskkill', '/F', '/PID', str(pid)],
                                    capture_output=True, timeout=5)
-                    logger.info(f"Qdrant process (PID {pid}) terminated")
                     break
         except Exception as e:
             logger.warning(f"Failed to stop Qdrant: {e}")
-
         os._exit(0)
 
     window.events.closed += on_window_close
+
+    # ── 设置进程标题（任务管理器可识别）───────────────
+    try:
+        import ctypes
+        ctypes.windll.kernel32.SetConsoleTitleW(
+            f"AiBrain-UI :{_FLASK_PORT}"
+        )
+    except Exception:
+        pass
+
+    # 启动文件监控（主线程，daemon）
+    _start_file_watcher()
+
+    # 阻塞主线程 — PyWebView 必须在主线程
     webview.start(debug=os.environ.get('WEBVIEW_DEBUG', '0') == '1')
+
+
+if __name__ == '__main__':
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--webview-only', action='store_true',
+                        help='只启动 PyWebView 窗口（Flask 由独立进程启动）')
+    parser.add_argument('--flask-only', action='store_true',
+                        help='只启动 Flask 服务（不启动窗口，用于 start.bat 双进程模式）')
+    args = parser.parse_args()
+
+    if args.flask_only:
+        # ── Flask-only 模式：主线程跑 Flask ──────────────
+        _reload = os.environ.get('FLASK_RELOAD', '1') == '1'
+        if not _reload:
+            # 仅在关闭 reloader 时才启动 watchdog 做日志归档
+            _start_file_watcher()
+        logger.info(f"[Flask-Only] Starting on port {_FLASK_PORT}")
+        start_flask()
+
+    elif args.webview_only:
+        # ── WebView-only 模式：主线程跑 PyWebView ─────────
+        _wait_and_start_ui()
+
+    else:
+        # ── 兼容旧的单进程模式：Flask子线程 + WebView主线程 ─
+        _port_file = os.path.join(_PROJECT_ROOT, '.port')
+        try:
+            with open(_port_file, 'w') as pf:
+                pf.write(str(_FLASK_PORT))
+            logger.info(f"Port file written: {_FLASK_PORT}")
+        except Exception as e:
+            logger.warning(f"Failed to write port file: {e}")
+
+        logger.info(f"Starting -> Flask:{_FLASK_PORT} Qdrant-HTTP:{_QDRANT_HTTP_PORT}")
+
+        flask_thread = threading.Thread(target=start_flask, daemon=False)
+        flask_thread.start()
+
+        _wait_and_start_ui()

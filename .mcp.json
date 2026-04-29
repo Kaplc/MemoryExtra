@@ -48,5 +48,9 @@
       },
       "disabled": false
     }
-  }
+  },
+  "disabledMcpServers": [
+    "computer",
+    "eye"
+  ]
 }

@@ -16,8 +16,8 @@ async function loadStream() {
   try {
     // 获取 MCP 调用和搜索记录
     const [storeRes, searchRes] = await Promise.all([
-      fetchJson(API + '/stream?action=store&limit=30'),
-      fetchJson(API + '/stream?action=search&limit=30'),
+      fetchJson(API + '/stream?action=store&days=3'),
+      fetchJson(API + '/stream?action=search&days=3'),
     ]);
 
     const storeItems = storeRes.items || [];
