@@ -249,9 +249,10 @@ class ProcessManager:
                 _threading.Thread(target=_do, daemon=True).start()
 
         observer = Observer()
-        observer.schedule(_Handler(), watch_dir, recursive=True)
+        observer.schedule(_Handler(), os.path.join(_PROJECT_ROOT, 'backend'), recursive=True)
+        observer.schedule(_Handler(), os.path.join(_PROJECT_ROOT, 'rag'), recursive=True)
         observer.start()
-        print(f"  [hot-reload] ✅ 文件监控已启动: backend/ （改.py自动重启）")
+        print(f"  [hot-reload] ✅ 文件监控已启动: backend/ rag/ （改.py自动重启）")
 
     # ── 监控主循环 ──
     def monitor(self):

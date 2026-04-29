@@ -1,111 +1,16 @@
-/* Wiki 状态页面 */
+/* Wiki 页面逻辑 */
 
 var _wikiFiles = [];
 var _sortKey = 'modified';
 var _sortAsc = false;
 var _wikiConfig = null;
+var _indexPollTimer = null;  // 索引进度轮询定时器
+var _lastIndexDone = -1;     // 上次已完成的文件数，用于判断是否需要刷新列表
 
-/* ==================== HTML转义 ==================== */
-// 属性转义：用于安全的HTML属性值
+/* ==================== 工具函数 ==================== */
+
 function escAttr(s) {
   return String(s || '').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
-}
-
-function onPageLoad() {
-  loadWikiConfig().then(function() { loadWikiData(); });
-}
-
-async function loadWikiConfig() {
-  try {
-    _wikiConfig = await fetchJson(API + '/wiki/settings');
-  } catch (e) {
-    console.error('[wiki] loadWikiConfig error:', e);
-    _wikiConfig = {};
-  }
-}
-
-async function loadWikiData() {
-  var wrap = document.getElementById('wikiTableWrap');
-  if (wrap) wrap.innerHTML = '<div class="mini-loading"></div>';
-  document.getElementById('indexResult').innerHTML = '';
-
-  try {
-    var data = await fetchJson(API + '/wiki/list');
-    _wikiFiles = Array.isArray(data.files) ? data.files : [];
-
-    document.getElementById('wikiFileCount').textContent = _wikiFiles.length;
-
-    var totalBytes = 0;
-    _wikiFiles.forEach(function(f) { totalBytes += f.size_bytes || 0; });
-    document.getElementById('wikiTotalSize').textContent = formatSize(totalBytes);
-    document.getElementById('wikiSizeSub').textContent = _wikiFiles.length + ' 个 .md 文件';
-
-    if (_wikiFiles.length === 0) {
-      document.getElementById('wikiFileCount').textContent = '0';
-      wrap.innerHTML = '<div class="empty-state">Wiki 目录为空</div>';
-      return;
-    }
-
-    renderTable(_wikiFiles);
-    document.getElementById('wikiFileListMeta').textContent = _wikiFiles.length + ' 个文件';
-    document.getElementById('wikiStatus').textContent = '就绪';
-    document.getElementById('wikiStatus').style.color = '#86efac';
-  } catch (e) {
-    console.error('[wiki] loadWikiData error:', e);
-    var w2 = document.getElementById('wikiTableWrap');
-    if (w2) w2.innerHTML = '<div class="empty-state">加载失败，请检查后端连接</div>';
-    document.getElementById('wikiStatus').textContent = '异常';
-    document.getElementById('wikiStatus').style.color = '#fca5a5';
-  }
-}
-
-async function loadLog() {
-  var wrap = document.getElementById('wikiLogWrap');
-  if (wrap) wrap.innerHTML = '<div class="mini-loading"></div>';
-
-  try {
-    var data = await fetchJson(API + '/wiki/log?lines=200', 3);
-    if (!data.lines) {
-      wrap.innerHTML = '<div class="empty-state">' + (data.error || '无日志') + '</div>';
-      return;
-    }
-
-    var metaEl = document.getElementById('wikiLogMeta');
-    if (metaEl && data.file) {
-      metaEl.textContent = data.file + ' | 共 ' + data.total_relevant + ' 条，显示 ' + data.returned + ' 条';
-    }
-
-    var html = '';
-    data.lines.forEach(function(line) {
-      var cls = '';
-      var display = escHtml(line);
-
-      var m = line.match(/^\[([^\]]+)\]\s+\[(INFO|WARNING|ERROR|WARN)\]/i);
-      if (m) {
-        var lvl = m[2].toLowerCase();
-        if (lvl.indexOf('error') >= 0) cls = 'log-level-error';
-        else if (lvl.indexOf('warn') >= 0) cls = 'log-level-warn';
-        else cls = 'log-level-info';
-        display = '<span class="log-time">' + escHtml(m[1]) + '</span> <span class="' + cls + '">[' + m[2] + ']</span>' + escHtml(line.substring(m[0].length));
-      } else if (/^\d{4}-\d{2}\/\d{2}\//.test(line)) {
-        cls = 'log-level-info';
-      } else if (/(?:error|fail|Exception)/i.test(line)) {
-        cls = 'log-level-error';
-      } else if (/warn|timeout|降级/i.test(line)) {
-        cls = 'log-level-warn';
-      } else if (/\[(RAG|API)[→←⚠✗]\]/i.test(line)) {
-        cls = 'log-level-info';
-      }
-
-      html += '<div class="log-line ' + cls + '">' + display + '</div>';
-    });
-
-    wrap.innerHTML = html || '<div class="empty-state">无相关日志</div>';
-    wrap.scrollTop = wrap.scrollHeight;
-  } catch (e) {
-    console.error('[wiki] loadLog error:', e);
-    if (wrap) wrap.innerHTML = '<div class="empty-state">日志加载失败: ' + e.message + '</div>';
-  }
 }
 
 function formatSize(bytes) {
@@ -121,6 +26,156 @@ function formatDate(ts) {
   return d.getFullYear() + '-' + pad(d.getMonth()+1) + '-' + pad(d.getDate()) + ' ' + pad(d.getHours()) + ':' + pad(d.getMinutes());
 }
 
+/* ==================== 页面初始化 ==================== */
+
+function onPageLoad() {
+  loadWikiConfig().then(function() {
+    loadWikiData();
+    restoreIndexProgress();
+  });
+}
+
+function cleanup() {
+  if (_indexPollTimer !== null) {
+    clearInterval(_indexPollTimer);
+    _indexPollTimer = null;
+  }
+}
+
+// 恢复索引进度 UI 状态（页面加载或切换回来时调用）
+async function restoreIndexProgress() {
+  try {
+    var pdata = await fetchJson(API + '/wiki/index-progress');
+    if (pdata.status === 'running' || pdata.status === 'idle') {
+      var btn = document.getElementById('btnReindex');
+      var progWrap = document.getElementById('indexProgressWrap');
+      var progLabel = document.getElementById('indexProgressLabel');
+      var progFill = document.getElementById('indexProgressFill');
+      if (btn) { btn.disabled = true; btn.textContent = '索引中...'; }
+      if (progWrap) progWrap.style.display = 'block';
+      if (progFill) progFill.style.width = (pdata.total > 0 ? Math.round((pdata.done / pdata.total) * 100) : 0) + '%';
+      if (progLabel) progLabel.textContent = (pdata.current_file || '进行中...') + ' (' + pdata.done + '/' + pdata.total + ')';
+      _lastIndexDone = pdata.done;
+      startIndexPoll();
+    }
+  } catch (e) {
+    console.error('[wiki] restoreIndexProgress error:', e);
+  }
+}
+
+// 启动索引进度轮询
+function startIndexPoll() {
+  if (_indexPollTimer !== null) return;
+  var progLabel = document.getElementById('indexProgressLabel');
+  var progFill = document.getElementById('indexProgressFill');
+  var progWrap = document.getElementById('indexProgressWrap');
+  var btn = document.getElementById('btnReindex');
+  var resultDiv = document.getElementById('indexResult');
+
+  _indexPollTimer = setInterval(async function() {
+    try {
+      var pdata = await fetchJson(API + '/wiki/index-progress');
+
+      if (pdata.status === 'running' || pdata.status === 'idle') {
+        var pct = pdata.total > 0 ? Math.round((pdata.done / pdata.total) * 100) : 0;
+        if (progFill) progFill.style.width = pct + '%';
+        // 文字显示当前正在处理的文件
+        var label = pdata.current_file
+          ? '索引: ' + pdata.current_file + ' (' + pdata.done + '/' + pdata.total + ')'
+          : ('进行中 ' + pct + '%');
+        if (progLabel) progLabel.textContent = label;
+        // 仅在完成数真正增加时才刷新文件列表
+        if (pdata.done !== _lastIndexDone) {
+          _lastIndexDone = pdata.done;
+          await loadWikiData();
+        }
+      } else {
+        clearInterval(_indexPollTimer);
+        _indexPollTimer = null;
+        _lastIndexDone = -1;
+        if (progWrap) progWrap.style.display = 'none';
+        if (btn) { btn.disabled = false; btn.textContent = '重建索引'; }
+        await loadWikiData();
+        if (pdata.status === 'done') {
+          if (resultDiv) resultDiv.innerHTML = '<div class="index-result ok">索引完成</div>';
+        } else if (pdata.status === 'error') {
+          if (resultDiv) resultDiv.innerHTML = '<div class="index-result err">索引出错</div>';
+        }
+      }
+    } catch (e) {
+      console.error('[wiki] index poll error:', e);
+    }
+  }, 500);
+}
+
+async function loadWikiConfig() {
+  try {
+    _wikiConfig = await fetchJson(API + '/wiki/settings');
+  } catch (e) {
+    console.error('[wiki] loadWikiConfig error:', e);
+    _wikiConfig = {};
+  }
+}
+
+/* ==================== 数据加载 ==================== */
+
+async function loadWikiData() {
+  var wrap = document.getElementById('wikiTableWrap');
+  if (wrap) wrap.innerHTML = '<div class="mini-loading"></div>';
+  var indexResult = document.getElementById('indexResult');
+  if (indexResult) indexResult.innerHTML = '';
+
+  try {
+    var data = await fetchJson(API + '/wiki/list');
+    _wikiFiles = Array.isArray(data.files) ? data.files : [];
+
+    // 更新统计面板
+    var el;
+    el = document.getElementById('wikiFileCount');
+    if (el) el.textContent = _wikiFiles.length;
+    var totalBytes = 0;
+    _wikiFiles.forEach(function(f) { totalBytes += f.size_bytes || 0; });
+    el = document.getElementById('wikiTotalSize');
+    if (el) el.textContent = formatSize(totalBytes);
+    el = document.getElementById('wikiSizeSub');
+    if (el) el.textContent = _wikiFiles.length + ' 个 .md 文件';
+
+    // 索引状态
+    var statusEl = document.getElementById('wikiStatus');
+    if (statusEl) {
+      if (data.indexed) {
+        var outOfSync = _wikiFiles.filter(function(f) { return f.index_status !== 'synced'; }).length;
+        if (outOfSync > 0) {
+          statusEl.textContent = '需重建 ' + outOfSync + ' 个文件';
+          statusEl.style.color = '#f97316';
+        } else {
+          statusEl.textContent = '已同步';
+          statusEl.style.color = '#86efac';
+        }
+      } else {
+        statusEl.textContent = '未索引';
+        statusEl.style.color = '#fde047';
+      }
+    }
+
+    if (_wikiFiles.length === 0) {
+      wrap.innerHTML = '<div class="empty-state">Wiki 目录为空</div>';
+      return;
+    }
+
+    renderTable(_wikiFiles);
+    document.getElementById('wikiFileListMeta').textContent = _wikiFiles.length + ' 个文件';
+  } catch (e) {
+    console.error('[wiki] loadWikiData error:', e);
+    var w2 = document.getElementById('wikiTableWrap');
+    if (w2) w2.innerHTML = '<div class="empty-state">加载失败，请检查后端连接</div>';
+    var statusEl = document.getElementById('wikiStatus');
+    if (statusEl) { statusEl.textContent = '异常'; statusEl.style.color = '#fca5a5'; }
+  }
+}
+
+/* ==================== 文件列表渲染 ==================== */
+
 function sortFiles(key) {
   if (_sortKey === key) { _sortAsc = !_sortAsc; } else { _sortKey = key; _sortAsc = true; }
   _wikiFiles.sort(function(a, b) {
@@ -134,34 +189,6 @@ function sortFiles(key) {
   renderTable(_wikiFiles);
 }
 
-function copyPath(path, row) {
-  if (navigator.clipboard && navigator.clipboard.writeText) {
-    navigator.clipboard.writeText(path).then(function() {
-      showCopyToast(row);
-    });
-  } else {
-    var ta = document.createElement('textarea');
-    ta.value = path;
-    ta.style.position = 'fixed';
-    ta.style.opacity = '0';
-    document.body.appendChild(ta);
-    ta.select();
-    document.execCommand('copy');
-    document.body.removeChild(ta);
-    showCopyToast(row);
-  }
-}
-
-function showCopyToast(row) {
-  var existing = document.querySelector('.copy-toast');
-  if (existing) existing.remove();
-  var toast = document.createElement('div');
-  toast.className = 'copy-toast';
-  toast.textContent = '路径已复制';
-  document.body.appendChild(toast);
-  setTimeout(function() { toast.remove(); }, 1200);
-}
-
 function renderTable(files) {
   var wrap = document.getElementById('wikiTableWrap');
   if (!wrap || !files.length) return;
@@ -171,7 +198,14 @@ function renderTable(files) {
     return _sortAsc ? ' \u25B2' : ' \u25BC';
   };
 
+  var indexIcon = function(status) {
+    if (status === 'synced') return '<span style="color:#22c55e" title="已同步">✓</span>';
+    if (status === 'out_of_sync') return '<span style="color:#f97316" title="文件已修改，需重建索引">⚠</span>';
+    return '<span style="color:#94a3b8" title="未索引">○</span>';
+  };
+
   var html = '<table class="file-table"><thead><tr>'
+           + '<th style="width:40px"></th>'
            + '<th onclick="sortFiles(\'filename\')">文件名' + arrow('filename') + '</th>'
            + '<th onclick="sortFiles(\'size_bytes\')">大小' + arrow('size_bytes') + '</th>'
            + '<th onclick="sortFiles(\'modified\')">修改时间' + arrow('modified') + '</th>'
@@ -179,6 +213,7 @@ function renderTable(files) {
 
   files.forEach(function(f) {
     html += '<tr onclick="copyPath(\'' + escAttr(f.abs_path || f.filename) + '\', this)" style="cursor:pointer">'
+         + '<td style="text-align:center">' + indexIcon(f.index_status) + '</td>'
          + '<td class="ft-name">' + escHtml(f.filename) + '</td>'
          + '<td class="ft-meta">' + formatSize(f.size_bytes) + '</td>'
          + '<td class="ft-meta">' + formatDate(f.modified) + '</td>'
@@ -190,60 +225,94 @@ function renderTable(files) {
   wrap.innerHTML = html;
 }
 
+function copyPath(path, row) {
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(path).then(function() { showCopyToast(); });
+  } else {
+    var ta = document.createElement('textarea');
+    ta.value = path;
+    ta.style.position = 'fixed';
+    ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.select();
+    document.execCommand('copy');
+    document.body.removeChild(ta);
+    showCopyToast();
+  }
+}
+
+function showCopyToast() {
+  var existing = document.querySelector('.copy-toast');
+  if (existing) existing.remove();
+  var toast = document.createElement('div');
+  toast.className = 'copy-toast';
+  toast.textContent = '路径已复制';
+  document.body.appendChild(toast);
+  setTimeout(function() { toast.remove(); }, 1200);
+}
+
+/* ==================== 索引操作 ==================== */
+
 async function rebuildIndex() {
   var btn = document.getElementById('btnReindex');
   var resultDiv = document.getElementById('indexResult');
-  btn.disabled = true;
-  btn.textContent = '索引中...';
-  resultDiv.innerHTML = '';
+  var progWrap = document.getElementById('indexProgressWrap');
+  var progFill = document.getElementById('indexProgressFill');
+
+  if (btn) { btn.disabled = true; btn.textContent = '索引中...'; }
+  if (resultDiv) resultDiv.innerHTML = '';
+  if (progWrap) { progWrap.style.display = 'block'; }
+  if (progFill) progFill.style.width = '0%';
+  _lastIndexDone = 0;
 
   try {
     var resp = await fetch(API + '/wiki/index', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
     });
-
-    if (!resp.ok) throw new Error('HTTP ' + resp.status);
-
+    if (!resp.ok) {
+      var errText = await resp.text();
+      throw new Error('HTTP ' + resp.status + ': ' + errText);
+    }
     var data = await resp.json();
 
     if (data.error) {
-      resultDiv.innerHTML = '<div class="index-result err">索引失败: ' + escHtml(data.error) + '</div>';
-    } else {
-      var parts = [];
-      if (data.added && data.added.length) parts.push('新增: ' + data.added.join(', '));
-      if (data.updated && data.updated.length) parts.push('更新: ' + data.updated.join(', '));
-      if (data.deleted && data.deleted.length) parts.push('移除: ' + data.deleted.join(', '));
-      if (data.unchanged) parts.push('未变: ' + data.unchanged + ' 个');
-      if (data.errors && data.errors.length) parts.push('错误: ' + data.errors.join('; '));
-
-      resultDiv.innerHTML = '<div class="index-result ok">' + (parts.join('<br>') || '完成') + '</div>';
-
-      await loadWikiData();
+      if (progWrap) progWrap.style.display = 'none';
+      if (resultDiv) resultDiv.innerHTML = '<div class="index-result err">索引失败: ' + escHtml(data.error) + '</div>';
+      if (btn) { btn.disabled = false; btn.textContent = '重建索引'; }
+      return;
     }
+
+    // 启动轮询（共享 startIndexPoll，复用定时器）
+    startIndexPoll();
+
   } catch (e) {
     console.error('[wiki] rebuildIndex error:', e);
-    resultDiv.innerHTML = '<div class="index-result err">请求失败: ' + e.message + '</div>';
-  } finally {
-    btn.disabled = false;
-    btn.textContent = '重建索引';
+    if (progWrap) progWrap.style.display = 'none';
+    if (resultDiv) resultDiv.innerHTML = '<div class="index-result err">请求失败: ' + e.message + '</div>';
+    if (btn) { btn.disabled = false; btn.textContent = '重建索引'; }
   }
 }
 
-/* Wiki Settings */
-function openWikiSettings() {
-  loadWikiSettingsData();
-  document.getElementById('wikiSettingsModal').classList.add('show');
+/* ==================== 右侧面板切换 ==================== */
+
+function switchSideTab(tab) {
+  document.querySelectorAll('.side-tab-btn').forEach(function(btn) {
+    btn.classList.toggle('active', btn.getAttribute('data-tab') === tab);
+  });
+  document.querySelectorAll('.side-panel').forEach(function(panel) {
+    panel.classList.remove('active');
+  });
+  var panel = document.getElementById('sidePanel' + tab.charAt(0).toUpperCase() + tab.slice(1));
+  if (panel) panel.classList.add('active');
+  if (tab === 'settings') loadWikiSettingsData();
 }
 
-function closeWikiSettings() {
-  document.getElementById('wikiSettingsModal').classList.remove('show');
-}
+/* ==================== 设置管理 ==================== */
 
 async function loadWikiSettingsData() {
   try {
-    var data = await fetchJson(API + '/wiki/settings');
-    _wikiConfig = data;
+    _wikiConfig = await fetchJson(API + '/wiki/settings');
   } catch (e) {
     console.error('[wiki] loadWikiSettingsData error:', e);
   }
@@ -266,12 +335,12 @@ function fillSettingsForm(data) {
       keyEl.placeholder = '已配置（留空不修改）';
       keyEl.value = '';
     } else if (data.llm.api_key) {
-        keyEl.placeholder = '已配置';
-        keyEl.value = '';
-      } else {
-        keyEl.placeholder = '留空则不修改';
-      }
+      keyEl.placeholder = '已配置';
+      keyEl.value = '';
+    } else {
+      keyEl.placeholder = '留空则不修改';
     }
+  }
 }
 
 async function saveWikiSettings() {
@@ -297,7 +366,6 @@ async function saveWikiSettings() {
     var data = await resp.json();
     if (data.ok) {
       _wikiConfig = Object.assign({}, _wikiConfig || {}, payload);
-      closeWikiSettings();
       toast('设置已保存');
       await loadWikiData();
     } else {
@@ -309,7 +377,7 @@ async function saveWikiSettings() {
   }
 }
 
-/* Cleanup */
-var cleanup;
+/* ==================== Cleanup ==================== */
 
+var cleanup;
 cleanup = function() {};

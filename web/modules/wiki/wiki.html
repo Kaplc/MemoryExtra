@@ -1,42 +1,12 @@
 <div class="wiki-wrap">
   <div class="wiki-header">
     <div class="wiki-title">Wiki 知识库</div>
-    <button class="btn-settings" onclick="openWikiSettings()">&#9881; 设置</button>
   </div>
 
-  <!-- Stats cards -->
-  <div class="wiki-row">
-    <div class="wscard">
-      <div class="wsc-label">文件数</div>
-      <div class="wsc-value" id="wikiFileCount">-</div>
-    </div>
-    <div class="wscard">
-      <div class="wsc-label">总大小</div>
-      <div class="wsc-value" id="wikiTotalSize">-</div>
-      <div class="wsc-sub" id="wikiSizeSub"></div>
-    </div>
-    <div class="wscard">
-      <div class="wsc-label">状态</div>
-      <div class="wsc-value" id="wikiStatus" style="font-size:15px;color:#86efac">就绪</div>
-    </div>
-  </div>
-
-  <!-- Actions -->
-  <div class="action-bar">
-    <button class="btn-action btn-primary" id="btnReindex" onclick="rebuildIndex()">重建索引</button>
-    <button class="btn-action btn-secondary" onclick="loadWikiData()">刷新数据</button>
-  </div>
-  <div id="indexResult"></div>
-
-  <!-- Tab bar -->
-  <div class="tab-bar">
-    <button class="tab-btn active" data-tab="files" onclick="switchTab('files')">文件列表</button>
-  </div>
-
-  <!-- Tab panels -->
-  <div class="content-area">
-    <!-- Files tab -->
-    <div class="tab-panel active" id="panelFiles">
+  <!-- Two-column layout -->
+  <div class="wiki-body">
+    <!-- Left: Main content -->
+    <div class="wiki-main">
       <div class="file-section">
         <div class="fs-header">
           <div class="fs-title">文件列表</div>
@@ -47,119 +17,178 @@
         </div>
       </div>
     </div>
-  </div>
-</div>
 
-<!-- Settings modal -->
-<div class="modal-overlay" id="wikiSettingsModal" onclick="closeWikiSettings()">
-  <div class="modal-box" onclick="event.stopPropagation()">
-    <div class="modal-head">
-      <div class="modal-title">Wiki 设置</div>
-      <button class="modal-close" onclick="closeWikiSettings()">&times;</button>
-    </div>
-    <div class="modal-body">
-      <div class="form-group">
-        <label class="form-label">Wiki 目录（相对于项目根目录）</label>
-        <input class="form-input" id="wsWikiDir" type="text" placeholder="如: wiki 或 /path/to/wiki">
+    <!-- Right: Info sidebar -->
+    <div class="wiki-sidebar">
+      <!-- Sidebar nav tabs -->
+      <div class="side-tab-bar">
+        <button class="side-tab-btn active" data-tab="stats" onclick="switchSideTab('stats')">统计</button>
+        <button class="side-tab-btn" data-tab="ops" onclick="switchSideTab('ops')">操作</button>
+        <button class="side-tab-btn" data-tab="settings" onclick="switchSideTab('settings')">设置</button>
       </div>
-      <div class="form-group">
-        <label class="form-label">LightRAG 数据目录</label>
-        <input class="form-input" id="wsLightragDir" type="text" placeholder="如: rag/lightrag_data">
-      </div>
-      <div class="form-row">
-        <div class="form-group">
-          <label class="form-label">语言</label>
-          <select class="form-select" id="wsLanguage">
-            <option value="Chinese">Chinese</option>
-            <option value="English">English</option>
-          </select>
-        </div>
-        <div class="form-group">
-          <label class="form-label">分块大小 (token)</label>
-          <input class="form-input" id="wsChunkSize" type="number" placeholder="1200" min="200" max="8000">
-        </div>
-      </div>
-      <div class="form-group">
-        <label class="form-label">搜索超时 (秒)</label>
-        <input class="form-input" id="wsTimeout" type="number" placeholder="30" min="5" max="300">
-      </div>
-      <div style="border-top:1px solid #2d3149;padding-top:12px;">
-        <div class="form-label" style="margin-bottom:8px;">LLM 配置（用于知识图谱构建）</div>
-        <div class="form-row">
-          <div class="form-group">
-            <label class="form-label">Provider</label>
-            <select class="form-select" id="wsLlmProvider">
-              <option value="">未配置</option>
-              <option value="openai">OpenAI</option>
-              <option value="minimax">MiniMax</option>
-              <option value="zhipu">智谱</option>
-            </select>
-          </div>
-          <div class="form-group">
-            <label class="form-label">Model</label>
-            <input class="form-input" id="wsLlmModel" type="text" placeholder="如: gpt-4o-mini">
+
+      <div class="side-content">
+        <!-- Stats panel -->
+        <div class="side-panel active" id="sidePanelStats">
+          <div class="wscard-col">
+            <div class="wscard">
+              <div class="wsc-label">文件数</div>
+              <div class="wsc-value" id="wikiFileCount">-</div>
+            </div>
+            <div class="wscard">
+              <div class="wsc-label">总大小</div>
+              <div class="wsc-value" id="wikiTotalSize">-</div>
+              <div class="wsc-sub" id="wikiSizeSub"></div>
+            </div>
+            <div class="wscard">
+              <div class="wsc-label">索引状态</div>
+              <div class="wsc-value" id="wikiStatus" style="font-size:15px;color:#64748b">检测中</div>
+            </div>
           </div>
         </div>
-        <div class="form-group">
-          <label class="form-label">Base URL</label>
-          <input class="form-input" id="wsLlmBaseUrl" type="text" placeholder="如: https://api.openai.com/v1">
+
+        <!-- Ops panel -->
+        <div class="side-panel" id="sidePanelOps">
+          <div class="ops-section">
+            <div class="ops-title">快捷操作</div>
+            <div class="ops-list">
+              <button class="ops-btn" id="btnReindex" onclick="rebuildIndex()">
+                <span class="ops-icon">&#x21bb;</span>
+                <span class="ops-text">重建索引</span>
+              </button>
+            </div>
+            <div id="indexResult"></div>
+            <div id="indexProgressWrap" style="display:none;margin-top:10px">
+              <div class="progress-label" id="indexProgressLabel">准备中...</div>
+              <div class="progress-bar-bg">
+                <div class="progress-bar-fill" id="indexProgressFill"></div>
+              </div>
+            </div>
+          </div>
         </div>
-        <div class="form-group">
-          <label class="form-label">API Key</label>
-          <input class="form-input" id="wsLlmApiKey" type="password" placeholder="留空则不修改">
+
+        <!-- Settings panel -->
+        <div class="side-panel" id="sidePanelSettings">
+          <div class="settings-section">
+            <div class="form-group">
+              <label class="form-label">Wiki 目录</label>
+              <input class="form-input" id="wsWikiDir" type="text" placeholder="如: wiki">
+            </div>
+            <div class="form-group">
+              <label class="form-label">LightRAG 数据目录</label>
+              <input class="form-input" id="wsLightragDir" type="text" placeholder="如: rag/lightrag_data">
+            </div>
+            <div class="form-group">
+              <label class="form-label">语言</label>
+              <select class="form-select" id="wsLanguage">
+                <option value="Chinese">Chinese</option>
+                <option value="English">English</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label class="form-label">分块大小 (token)</label>
+              <input class="form-input" id="wsChunkSize" type="number" placeholder="1200" min="200" max="8000">
+            </div>
+            <div class="form-group">
+              <label class="form-label">搜索超时 (秒)</label>
+              <input class="form-input" id="wsTimeout" type="number" placeholder="30" min="5" max="300">
+            </div>
+            <div class="settings-divider">
+              <div class="form-label" style="margin-bottom:8px;">LLM 配置</div>
+              <div class="form-group">
+                <label class="form-label">Provider</label>
+                <select class="form-select" id="wsLlmProvider">
+                  <option value="">未配置</option>
+                  <option value="openai">OpenAI</option>
+                  <option value="minimax">MiniMax</option>
+                  <option value="zhipu">智谱</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label class="form-label">Model</label>
+                <input class="form-input" id="wsLlmModel" type="text" placeholder="如: gpt-4o-mini">
+              </div>
+              <div class="form-group">
+                <label class="form-label">Base URL</label>
+                <input class="form-input" id="wsLlmBaseUrl" type="text" placeholder="如: https://api.openai.com/v1">
+              </div>
+              <div class="form-group">
+                <label class="form-label">API Key</label>
+                <input class="form-input" id="wsLlmApiKey" type="password" placeholder="留空则不修改">
+              </div>
+            </div>
+            <button class="btn-save" onclick="saveWikiSettings()">保存设置</button>
+          </div>
         </div>
       </div>
-    </div>
-    <div class="modal-foot">
-      <button class="btn-save" onclick="saveWikiSettings()">保存设置</button>
     </div>
   </div>
 </div>
 
 <style>
+/* === Layout === */
 .wiki-wrap { padding: 24px; display: flex; flex-direction: column; gap: 16px; box-sizing: border-box; height: 100%; overflow: hidden; }
+.wiki-header { display: flex; align-items: center; justify-content: space-between; flex-shrink: 0; }
 .wiki-title { font-size: 18px; font-weight: 700; }
-.wiki-row { display: flex; gap: 12px; flex-wrap: wrap; }
 
-/* Status card */
-.wscard { flex: 1; min-width: 140px; background: #1a1d27; border: 1px solid #2d3149; border-radius: 10px; padding: 16px 18px; display: flex; flex-direction: column; gap: 4px; align-items: flex-start; text-align: left; }
+/* Two-column body */
+.wiki-body { display: flex; gap: 16px; flex: 1; min-height: 0; overflow: hidden; }
+.wiki-main { flex: 1; min-width: 0; display: flex; flex-direction: column; overflow: hidden; }
+
+/* === Right Sidebar === */
+.wiki-sidebar {
+  width: 300px; min-width: 260px; flex-shrink: 0;
+  background: #1a1d27; border: 1px solid #2d3149; border-radius: 12px;
+  display: flex; flex-direction: column; overflow: hidden;
+}
+.side-tab-bar {
+  display: flex; background: #12141c; border-bottom: 1px solid #2d3149;
+  padding: 4px; flex-shrink: 0;
+}
+.side-tab-btn {
+  flex: 1; padding: 7px 0; border-radius: 6px; font-size: 12px; font-weight: 600;
+  cursor: pointer; transition: all .15s; user-select: none;
+  border: none; background: transparent; color: #64748b; text-align: center;
+}
+.side-tab-btn:hover { color: #94a3b8; }
+.side-tab-btn.active { background: #7c3aed33; color: #a78bfa; }
+
+.side-content { flex: 1; min-height: 0; overflow: hidden; display: flex; flex-direction: column; }
+.side-panel { display: none; flex: 1; flex-direction: column; min-height: 0; overflow: hidden; padding: 14px; }
+.side-panel.active { display: flex; }
+
+/* === Stats Cards === */
+.wscard-col { display: flex; flex-direction: column; gap: 10px; }
+.wscard {
+  background: #12141c; border: 1px solid #2d3149; border-radius: 10px;
+  padding: 14px 16px; display: flex; flex-direction: column; gap: 4px;
+}
 .wsc-label { font-size: 11px; color: #64748b; text-transform: uppercase; letter-spacing: .06em; font-weight: 600; }
 .wsc-value { font-size: 22px; font-weight: 700; color: #e2e8f0; }
 .wsc-sub { font-size: 11px; color: #64748b; margin-top: 2px; }
 
-/* Action bar */
-.action-bar { display: flex; align-items: center; gap: 10px; }
-.btn-action {
-  padding: 8px 18px; border-radius: 8px; font-size: 13px; font-weight: 600;
-  cursor: pointer; transition: all .2s; border: none; user-select: none;
+/* === Ops Panel === */
+.ops-section { display: flex; flex-direction: column; gap: 12px; }
+.ops-title { font-size: 13px; font-weight: 600; color: #e2e8f0; }
+.ops-list { display: flex; flex-direction: column; gap: 8px; }
+.ops-btn {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 14px; border-radius: 8px;
+  background: #12141c; border: 1px solid #2d3149;
+  color: #94a3b8; font-size: 13px; font-weight: 500;
+  cursor: pointer; transition: all .15s; user-select: none;
 }
-.btn-primary { background: #7c3aed33; color: #a78bfa; border: 1px solid #7c3aed44; }
-.btn-primary:hover { background: #7c3aed44; color: #c4b5fd; }
-.btn-secondary { background: #1e293b; color: #94a3b8; border: 1px solid #2d3149; }
-.btn-secondary:hover { background: #263044; color: #cbd5e1; }
-.btn-primary:disabled, .btn-secondary:disabled { opacity: 0.4; cursor: not-allowed; }
+.ops-btn:hover { background: #1e293b; color: #e2e8f0; border-color: #7c3aed44; }
+.ops-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.ops-icon { font-size: 16px; width: 20px; text-align: center; flex-shrink: 0; }
+.ops-text { white-space: nowrap; }
 
-/* Index result */
+/* === Index Result === */
 .index-result { font-size: 12px; padding: 10px 14px; border-radius: 8px; line-height: 1.6; }
 .index-result.ok { background: #22c55e11; color: #86efac; border: 1px solid #22c55e22; }
 .index-result.err { background: #ef444411; color: #fca5a5; border: 1px solid #ef444422; }
 
-/* Tab bar */
-.tab-bar { display: flex; gap: 0; background: #12141c; border-radius: 8px; padding: 2px; width: fit-content; }
-.tab-btn {
-  padding: 6px 20px; border-radius: 6px; font-size: 12px; font-weight: 600;
-  cursor: pointer; transition: all .15s; user-select: none;
-  border: none; background: transparent; color: #64748b;
-}
-.tab-btn:hover { color: #94a3b8; }
-.tab-btn.active { background: #7c3aed33; color: #a78bfa; }
-
-/* Content area (tab panel) */
-.content-area { flex: 1; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
-.tab-panel { display: none; flex: 1; flex-direction: column; min-height: 0; overflow: hidden; }
-.tab-panel.active { display: flex; }
-
-/* File table section */
+/* === File Table === */
 .file-section { background: #1a1d27; border: 1px solid #2d3149; border-radius: 12px; padding: 20px; display: flex; flex-direction: column; gap: 12px; flex: 1; min-height: 0; }
 .fs-header { display: flex; align-items: center; justify-content: space-between; flex-shrink: 0; }
 .fs-title { font-size: 13px; font-weight: 600; color: #e2e8f0; }
@@ -173,76 +202,16 @@
 }
 .file-table th:hover { color: #94a3b8; }
 .file-table td { padding: 8px 12px; border-bottom: 1px solid #1a1d27; vertical-align: top; }
-.file-table tr:hover td { background: #12141c; }
-.ft-name { color: #a78bfa; font-weight: 500; word-break: break-all; }
+.file-table tbody tr:hover { background: #12141c; }
+.ft-name { color: #a78bfa; font-weight: 500; white-space: nowrap; }
 .ft-meta { color: #64748b; white-space: nowrap; font-size: 12px; }
 .ft-preview { color: #94a3b8; max-width: 400px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
 
-/* Log section */
-.log-section { background: #1a1d27; border: 1px solid #2d3149; border-radius: 12px; padding: 20px; display: flex; flex-direction: column; gap: 12px; flex: 1; min-height: 0; }
-.log-header { display: flex; align-items: center; justify-content: space-between; flex-shrink: 0; }
-.log-title { font-size: 13px; font-weight: 600; color: #e2e8f0; }
-.log-wrap { flex: 1; min-height: 0; overflow-y: auto; font-size: 11px; line-height: 1.6; font-family: 'Consolas', monospace; }
-.log-line { color: #94a3b8; white-space: pre-wrap; word-break: break-all; border-bottom: 1px solid #12141c; padding: 2px 4px; }
-.log-line:hover { background: #12141c; }
-.log-time { color: #64748b; }
-.log-level-info { color: #86efac; }
-.log-level-warn { color: #fde047; }
-.log-level-error { color: #fca5a5; }
+/* === Settings Panel === */
+.settings-section { display: flex; flex-direction: column; gap: 12px; overflow-y: auto; flex: 1; min-height: 0; }
+.settings-divider { border-top: 1px solid #2d3149; padding-top: 12px; margin-top: 4px; display: flex; flex-direction: column; gap: 12px; }
 
-/* Loading spinner */
-.mini-loading { display: block; width: 24px; height: 24px; border: 2px solid #eab30844; border-top-color: #fde047; border-radius: 50%; animation: spin 0.8s linear infinite; margin: 24px auto; }
-@keyframes spin { to { transform: rotate(360deg); } }
-
-/* Copy toast */
-.copy-toast {
-  position: fixed; top: 36px; left: 50%; transform: translateX(-50%);
-  background: #22c55e22; color: #86efac; border: 1px solid #22c55e44;
-  font-size: 11px; padding: 4px 16px; border-radius: 6px; pointer-events: none;
-  z-index: 100; animation: fadeInOut 1.2s ease forwards;
-}
-@keyframes fadeInOut { 0%{opacity:0;transform:translateX(-50%) translateY(-12px)} 15%{opacity:1;transform:translateX(-50%) translateY(0)} 85%{opacity:1;transform:translateX(-50%) translateY(0)} 100%{opacity:0;transform:translateX(-50%) translateY(12px)} }
-/* File table row cursor */
-.file-table tbody tr:hover { background: #12141c; }
-
-/* Empty state */
-.empty-state { text-align: center; color: #64748b; padding: 40px 20px; font-size: 13px; }
-
-/* Settings button */
-.wiki-header { display: flex; align-items: center; justify-content: space-between; }
-.btn-settings {
-  padding: 6px 14px; border-radius: 8px; font-size: 12px; font-weight: 600;
-  cursor: pointer; transition: all .2s; user-select: none;
-  border: none; background: #1e293b; color: #94a3b8; display: flex; align-items: center; gap: 4px;
-}
-.btn-settings:hover { background: #263044; color: #cbd5e1; }
-
-/* Settings modal */
-.modal-overlay {
-  position: fixed; inset: 0; background: #00000066; z-index: 200;
-  display: none; align-items: center; justify-content: center;
-}
-.modal-overlay.show { display: flex; animation: fadeIn .15s ease; }
-@keyframes fadeIn { from{opacity:0} to{opacity:1} }
-
-.modal-box {
-  background: #1a1d27; border: 1px solid #2d3149; border-radius: 16px;
-  width: 480px; max-width: 90vw; max-height: 80vh; overflow-y: auto;
-  box-shadow: 0 16px 48px #00000044;
-}
-.modal-head {
-  display: flex; align-items: center; justify-content: space-between;
-  padding: 18px 22px; border-bottom: 1px solid #2d3149;
-}
-.modal-title { font-size: 15px; font-weight: 700; }
-.modal-close {
-  width: 28px; height: 28px; border-radius: 6px; border: none; background: transparent;
-  color: #64748b; cursor: pointer; font-size: 16px; line-height: 1;
-}
-.modal-close:hover { background: #2d3149; color: #cbd5e1; }
-
-.modal-body { padding: 20px 22px; display: flex; flex-direction: column; gap: 16px; }
-
+/* === Form Elements === */
 .form-group { display: flex; flex-direction: column; gap: 5px; }
 .form-label { font-size: 12px; font-weight: 600; color: #94a3b8; }
 .form-input, .form-select {
@@ -251,18 +220,30 @@
   outline: none; transition: border-color .2s;
 }
 .form-input:focus, .form-select:focus { border-color: #7c3aed; }
-.form-row { display: flex; gap: 12px; }
-.form-row .form-group { flex: 1; }
 
-.modal-foot {
-  display: flex; justify-content: flex-end; gap: 8px;
-  padding: 16px 22px; border-top: 1px solid #2d3149;
-}
-
+/* === Buttons === */
 .btn-save {
   padding: 8px 24px; border-radius: 8px; font-size: 13px; font-weight: 600;
   cursor: pointer; transition: all .2s; border: none; user-select: none;
   background: #7c3aed33; color: #a78bfa; border: 1px solid #7c3aed44;
 }
 .btn-save:hover { background: #7c3aed55; }
+
+/* === Misc === */
+.mini-loading { display: block; width: 24px; height: 24px; border: 2px solid #eab30844; border-top-color: #fde047; border-radius: 50%; animation: spin 0.8s linear infinite; margin: 24px auto; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.empty-state { text-align: center; color: #64748b; padding: 40px 20px; font-size: 13px; }
+
+.copy-toast {
+  position: fixed; top: 36px; left: 50%; transform: translateX(-50%);
+  background: #22c55e22; color: #86efac; border: 1px solid #22c55e44;
+  font-size: 11px; padding: 4px 16px; border-radius: 6px; pointer-events: none;
+  z-index: 100; animation: fadeInOut 1.2s ease forwards;
+}
+@keyframes fadeInOut { 0%{opacity:0;transform:translateX(-50%) translateY(-12px)} 15%{opacity:1;transform:translateX(-50%)} 85%{opacity:1;transform:translateX(-50%)} 100%{opacity:0;transform:translateX(-50%) translateY(12px)} }
+
+.progress-label { font-size: 11px; color: #94a3b8; margin-bottom: 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.progress-bar-bg { background: #1a1d27; border-radius: 4px; height: 6px; overflow: hidden; }
+.progress-bar-fill { height: 100%; background: linear-gradient(90deg, #7c3aed, #a78bfa); border-radius: 4px; transition: width 0.3s ease; width: 0%; }
 </style>

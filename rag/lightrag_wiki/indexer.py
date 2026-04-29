@@ -9,6 +9,28 @@ from datetime import datetime, timezone
 
 logger = logging.getLogger(__name__)
 
+# 索引进度全局状态
+_index_progress = {
+    "running": False,
+    "done": 0,
+    "total": 0,
+    "current_file": "",
+    "status": "idle",  # idle / running / done / error
+    "result": None,
+}
+
+
+def _set_progress(done, total, current_file, status="running"):
+    # done 是已完成的文件数，显示时用 done+1 表示当前正在处理第几个
+    _index_progress["done"] = done
+    _index_progress["total"] = total
+    _index_progress["current_file"] = current_file
+    _index_progress["status"] = status
+
+
+def get_index_progress():
+    return _index_progress
+
 
 def _compute_file_md5(file_path: str) -> str:
     """计算文件的 MD5 哈希值"""
@@ -66,6 +88,7 @@ def sync_index() -> dict:
 
     wiki_dir = get_wiki_dir()
     meta_path = get_index_meta_path()
+    _set_progress(0, 1, "扫描目录...", "running")
 
     # 确保 wiki 目录存在
     os.makedirs(wiki_dir, exist_ok=True)
@@ -82,11 +105,14 @@ def sync_index() -> dict:
     indexed_files = meta.get("files", {})
     result = {"added": [], "updated": [], "deleted": [], "unchanged": 0, "errors": []}
 
+    total = len(current_map)
+    done = 0
+
     # 检测新增和修改
-    for rel_path, abs_path in current_map.items():
+    items = list(current_map.items())
+    for i, (rel_path, abs_path) in enumerate(items):
         md5 = _compute_file_md5(abs_path)
         old_entry = indexed_files.get(rel_path)
-
         if old_entry is None:
             # 新文件
             try:
@@ -110,12 +136,17 @@ def sync_index() -> dict:
                     "indexed_at": datetime.now(timezone.utc).isoformat(),
                 }
                 result["updated"].append(rel_path)
-                logger.info(f"重新索引修改文件: {rel_path}")
+                logger.info(f"索引修改文件: {rel_path}")
             except Exception as e:
                 result["errors"].append(f"{rel_path}: {e}")
-                logger.error(f"重新索引失败 {rel_path}: {e}")
+                logger.error(f"索引失败 {rel_path}: {e}")
         else:
             result["unchanged"] += 1
+
+        done += 1
+        # 当前完成 done 个，正在处理 next_file（下一个）或空（全部完成）
+        next_file = items[i + 1][0] if i + 1 < len(items) else ""
+        _set_progress(done, total, next_file)
 
     # 检测已删除的文件
     for rel_path in list(indexed_files.keys()):
@@ -128,7 +159,7 @@ def sync_index() -> dict:
     meta["files"] = indexed_files
     _save_index_meta(meta_path, meta)
 
-    total = len(result["added"]) + len(result["updated"]) + len(result["deleted"])
+    _set_progress(total, total, "", "done")
     logger.info(
         f"索引同步完成: 新增 {len(result['added'])}, "
         f"更新 {len(result['updated'])}, 删除 {len(result['deleted'])}, "
@@ -182,3 +213,52 @@ def _index_file(abs_path: str, rel_path: str):
         return
 
     insert_document(content, file_path=rel_path)
+
+
+# ── 文件变化自动监听（单例）───────────────────────────────────────────────
+_wiki_watcher = None
+
+
+def _start_wiki_watcher():
+    """启动 wiki 目录监听，文件变化时自动增量索引"""
+    global _wiki_watcher
+    if _wiki_watcher is not None:
+        return  # 避免重复启动
+
+    try:
+        from watchdog.observers import Observer
+        from watchdog.events import FileSystemEventHandler, FileModifiedEvent
+    except ImportError:
+        logger.warning("[wiki-watcher] watchdog 未安装，无法自动监听文件变化")
+        return
+
+    from .config import get_wiki_dir
+    wiki_dir = get_wiki_dir()
+    if not os.path.isdir(wiki_dir):
+        logger.warning(f"[wiki-watcher] wiki_dir 不存在，跳过监听: {wiki_dir}")
+        return
+
+    class _WikiChangeHandler(FileSystemEventHandler):
+        def on_modified(self, event):
+            if isinstance(event, FileModifiedEvent) and event.src_path.lower().endswith('.md'):
+                rel = os.path.relpath(event.src_path, wiki_dir)
+                logger.info(f"[wiki-watcher] 检测到文件变化: {rel}")
+                index_single_file(rel)
+
+        def on_created(self, event):
+            if not event.is_directory and event.src_path.lower().endswith('.md'):
+                rel = os.path.relpath(event.src_path, wiki_dir)
+                logger.info(f"[wiki-watcher] 检测到新文件: {rel}")
+                index_single_file(rel)
+
+        def on_deleted(self, event):
+            if not event.is_directory and event.src_path.lower().endswith('.md'):
+                rel = os.path.relpath(event.src_path, wiki_dir)
+                logger.info(f"[wiki-watcher] 检测到文件删除: {rel}（请手动重建索引清理残留向量）")
+
+    observer = Observer()
+    observer.schedule(_WikiChangeHandler(), wiki_dir, recursive=True)
+    observer.daemon = True
+    observer.start()
+    _wiki_watcher = observer
+    logger.info(f"[wiki-watcher] 已启动，监听目录: {wiki_dir}")

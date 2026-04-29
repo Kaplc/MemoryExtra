@@ -69,9 +69,10 @@ def _start_file_watcher():
 
     observer = Observer()
     observer.schedule(_ReloadHandler(), watch_dir, recursive=True)
+    observer.schedule(_ReloadHandler(), os.path.join(_PROJECT_ROOT, 'rag'), recursive=True)
     observer.daemon = True
     observer.start()
-    logger.info(f"[hot-reload] 文件监控已启动: {watch_dir}")
+    logger.info(f"[hot-reload] 文件监控已启动: {watch_dir} rag/")
 
 
 if __name__ == '__main__':

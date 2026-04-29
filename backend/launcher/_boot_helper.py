@@ -149,6 +149,9 @@ def check_deps():
                 'mcp': 'mcp',
                 'mem0ai': 'mem0',
                 'lightrag-hku': 'lightrag',
+                'fastembed': 'fastembed',
+                'spacy': 'spacy',
+                'watchdog': 'watchdog',
             }
             imp_name = alias_map.get(pkg, pkg.replace('-', '_'))
             spec = importlib.util.find_spec(imp_name)

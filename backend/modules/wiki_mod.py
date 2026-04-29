@@ -14,6 +14,7 @@ import logging
 import time as _time
 import os
 import glob
+import threading
 
 logger = logging.getLogger(__name__)
 
@@ -112,56 +113,83 @@ def register(app, stats_db=None):
 
     @app.route('/wiki/list', methods=['GET'])
     def wiki_list():
+        # 首次访问时启动 wiki 文件监听器
+        from rag.lightrag_wiki.indexer import _start_wiki_watcher
+        _start_wiki_watcher()
+
         t0 = _time.time()
         logger.info("[API→] /wiki/list")
         try:
             _, _, _, _, scan_wiki_files = _get_rag_engine()
-            from rag.lightrag_wiki.config import get_wiki_dir
+            from rag.lightrag_wiki.config import get_wiki_dir, get_index_meta_path
+            from rag.lightrag_wiki.indexer import _load_index_meta, _compute_file_md5
             import os
             wiki_dir = get_wiki_dir()
             if not os.path.isdir(wiki_dir):
                 logger.info("[API←] /wiki/list wiki_dir 不存在，返回空列表")
-                return jsonify({"files": []})
+                return jsonify({"files": [], "indexed": False})
             files = scan_wiki_files(wiki_dir)
+            meta_path = get_index_meta_path()
+            indexed = os.path.exists(meta_path)
+            index_meta = _load_index_meta(meta_path) if indexed else {"files": {}}
             result = []
             for abs_path in files:
                 rel_path = os.path.relpath(abs_path, wiki_dir)
                 stat = os.stat(abs_path)
                 with open(abs_path, "r", encoding="utf-8") as f:
                     preview = f.read(200).strip()
+                # 检测该文件是否需要重建索引
+                entry = index_meta["files"].get(rel_path)
+                if entry is None:
+                    index_status = "not_indexed"
+                elif entry.get("md5") != _compute_file_md5(abs_path):
+                    index_status = "out_of_sync"
+                else:
+                    index_status = "synced"
                 result.append({
                     "filename": rel_path,
                     "abs_path": abs_path,
                     "size_bytes": stat.st_size,
                     "modified": os.path.getmtime(abs_path),
                     "preview": preview,
+                    "index_status": index_status,
                 })
             total = _time.time() - t0
-            logger.info(f"[API←] /wiki/list 完成 | total={total:.1f}s files_count={len(result)}")
-            return jsonify({"files": result})
+            logger.info(f"[API←] /wiki/list 完成 | total={total:.1f}s files_count={len(result)} indexed={indexed}")
+            return jsonify({"files": result, "indexed": indexed})
         except Exception as e:
             logger.error(f"[API✗] /wiki/list 失败: {e}")
             return jsonify({"error": str(e)})
 
     @app.route('/wiki/index', methods=['POST'])
     def wiki_index():
-        t0 = _time.time()
+        from rag.lightrag_wiki.indexer import get_index_progress, _set_progress, _index_progress
         logger.info("[API→] /wiki/index")
-        try:
-            _, _, _, sync_index, _ = _get_rag_engine()
-            result = sync_index()
-            total = _time.time() - t0
-            logger.info(
-                f"[API←] /wiki/index 完成 | total={total:.1f}s "
-                f"added={len(result.get('added',[]))} "
-                f"updated={len(result.get('updated',[]))} "
-                f"deleted={len(result.get('deleted',[]))} "
-                f"unchanged={result.get('unchanged',0)}"
-            )
-            return jsonify(result)
-        except Exception as e:
-            logger.error(f"[API✗] /wiki/index 失败: {e}")
-            return jsonify({"error": str(e)})
+
+        # 如果已经在运行，返回冲突
+        if _index_progress["running"]:
+            return jsonify({"error": "索引任务正在进行中"}), 409
+
+        # 重置进度并启动后台线程
+        _set_progress(0, 0, "", "running")
+        t0 = _time.time()
+
+        def _run():
+            try:
+                _, _, _, sync_index, _ = _get_rag_engine()
+                sync_index()
+            except Exception as e:
+                from rag.lightrag_wiki.indexer import _set_progress
+                _set_progress(0, 0, "", "error")
+                logger.error(f"[wiki-index] 后台索引失败: {e}")
+
+        threading.Thread(target=_run, daemon=True).start()
+        return jsonify({"status": "started", "started_at": _time.time() - t0})
+
+    @app.route('/wiki/index-progress', methods=['GET'])
+    def wiki_index_progress():
+        from rag.lightrag_wiki.indexer import get_index_progress
+        return jsonify(get_index_progress())
 
     @app.route('/wiki/log', methods=['GET'])
     def wiki_log():
