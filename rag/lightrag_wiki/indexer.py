@@ -105,48 +105,43 @@ def sync_index() -> dict:
     indexed_files = meta.get("files", {})
     result = {"added": [], "updated": [], "deleted": [], "unchanged": 0, "errors": []}
 
-    total = len(current_map)
-    done = 0
-
-    # 检测新增和修改
+    # 第一遍：扫描所有文件，计算MD5，分类哪些需要处理
+    _set_progress(0, 1, "扫描文件...", "running")
+    to_process = []
     items = list(current_map.items())
-    for i, (rel_path, abs_path) in enumerate(items):
+    for rel_path, abs_path in items:
         md5 = _compute_file_md5(abs_path)
         old_entry = indexed_files.get(rel_path)
         if old_entry is None:
-            # 新文件
-            try:
-                _index_file(abs_path, rel_path)
-                indexed_files[rel_path] = {
-                    "md5": md5,
-                    "indexed_at": datetime.now(timezone.utc).isoformat(),
-                }
-                result["added"].append(rel_path)
-                logger.info(f"索引新文件: {rel_path}")
-            except Exception as e:
-                result["errors"].append(f"{rel_path}: {e}")
-                logger.error(f"索引失败 {rel_path}: {e}")
-
+            to_process.append((rel_path, abs_path, md5, "added"))
         elif old_entry.get("md5") != md5:
-            # 文件已修改 — 重新索引
-            try:
-                _index_file(abs_path, rel_path)
-                indexed_files[rel_path] = {
-                    "md5": md5,
-                    "indexed_at": datetime.now(timezone.utc).isoformat(),
-                }
-                result["updated"].append(rel_path)
-                logger.info(f"索引修改文件: {rel_path}")
-            except Exception as e:
-                result["errors"].append(f"{rel_path}: {e}")
-                logger.error(f"索引失败 {rel_path}: {e}")
+            to_process.append((rel_path, abs_path, md5, "updated"))
         else:
             result["unchanged"] += 1
 
+    total = len(to_process)
+    if total == 0:
+        _set_progress(0, 0, "无需处理", "done")
+        logger.info("索引同步完成: 全部已是最新")
+        return result
+
+    done = 0
+    # 第二遍：仅遍历需要处理的文件，实时更新进度
+    for i, (rel_path, abs_path, md5, action) in enumerate(to_process):
+        _set_progress(done, total, rel_path)
+        try:
+            _index_file(abs_path, rel_path)
+            indexed_files[rel_path] = {
+                "md5": md5,
+                "indexed_at": datetime.now(timezone.utc).isoformat(),
+            }
+            result[action].append(rel_path)
+            logger.info(f"{'索引新文件' if action == 'added' else '重新索引'}: {rel_path}")
+        except Exception as e:
+            result["errors"].append(f"{rel_path}: {e}")
+            logger.error(f"索引失败 {rel_path}: {e}")
+
         done += 1
-        # 当前完成 done 个，正在处理 next_file（下一个）或空（全部完成）
-        next_file = items[i + 1][0] if i + 1 < len(items) else ""
-        _set_progress(done, total, next_file)
 
     # 检测已删除的文件
     for rel_path in list(indexed_files.keys()):
