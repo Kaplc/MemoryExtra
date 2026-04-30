@@ -54,3 +54,4 @@ backend/qdrant/config/config.yaml
 rag/lightrag_data/
 .claude\settings.local.jsonmem0/
 .claude/hookmd
+backend/.pm.pid
