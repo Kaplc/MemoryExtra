@@ -59,11 +59,15 @@ async function restoreIndexProgress() {
       if (progPct) progPct.textContent = pct + '%';
       if (progLabel) progLabel.textContent = (pdata.current_file || '进行中...') + ' (' + pdata.done + '/' + pdata.total + ')';
       _lastIndexDone = pdata.done;
+    } else {
+      // 非 running 状态（done/error/idle）：刷新文件列表，确保 index_status 最新
+      await loadWikiData();
     }
     // 始终启动轮询，被动检测后端索引状态
     startIndexPoll();
   } catch (e) {
     console.error('[wiki] restoreIndexProgress error:', e);
+    startIndexPoll();
   }
 }
 

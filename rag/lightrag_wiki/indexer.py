@@ -115,6 +115,7 @@ def sync_index() -> dict:
     from .config import get_wiki_dir, get_index_meta_path
     from .rag_engine import insert_document
 
+    logger.info("[indexer] sync_index() 开始")
     wiki_dir = get_wiki_dir()
     meta_path = get_index_meta_path()
     _set_progress(0, 1, "扫描目录...", "running")
@@ -147,6 +148,7 @@ def sync_index() -> dict:
             to_process.append((rel_path, abs_path, md5, "updated"))
         else:
             result["unchanged"] += 1
+            logger.info(f"[indexer→] 跳过（MD5未变）| rel_path={rel_path} md5={md5}")
 
     total = len(to_process)
     if total == 0:
@@ -178,13 +180,19 @@ def sync_index() -> dict:
                 "md5": md5,
                 "indexed_at": datetime.now(timezone.utc).isoformat(),
             }
+            logger.info(f"[indexer✓] meta 更新成功 | rel_path={rel_path} md5={md5}")
             result[action].append(rel_path)
             logger.info(f"{'索引新文件' if action == 'added' else '重新索引'}: {rel_path}")
+            # 每个文件处理完立即写盘，避免中途失败导致全部丢失，也让前端能实时看到进度
+            meta["files"] = indexed_files
+            _save_index_meta(meta_path, meta)
         except Exception as e:
             result["errors"].append(f"{rel_path}: {e}")
             logger.error(f"索引失败 {rel_path}: {e}")
 
+        # 无论成功或失败，都推进进度
         done += 1
+        _set_progress(done, total, rel_path)
 
     # 检测已删除的文件
     for rel_path in list(indexed_files.keys()):
@@ -193,9 +201,10 @@ def sync_index() -> dict:
             result["deleted"].append(rel_path)
             logger.info(f"文件已删除，移除索引: {rel_path}")
 
-    # 保存元数据
+    # 完成后写盘（保存删除操作）
     meta["files"] = indexed_files
     _save_index_meta(meta_path, meta)
+    logger.info(f"[indexer✓] meta 已保存 | path={meta_path} files_count={len(indexed_files)}")
 
     _set_progress(total, total, "", "done")
     logger.info(
@@ -243,14 +252,16 @@ def _index_file(abs_path: str, rel_path: str):
     """将单个 MD 文件内容插入 LightRAG"""
     from .rag_engine import insert_document
 
+    logger.info(f"[indexer→] _index_file 开始 | rel_path={rel_path}")
     with open(abs_path, "r", encoding="utf-8") as f:
         content = f.read()
 
     if not content.strip():
-        logger.warning(f"跳过空文件: {rel_path}")
+        logger.warning(f"[indexer] 跳过空文件: {rel_path}")
         return
 
     insert_document(content, file_path=rel_path)
+    logger.info(f"[indexer←] _index_file 完成 | rel_path={rel_path} content_len={len(content)}")
 
 
 # ── 文件变化自动监听（单例）───────────────────────────────────────────────

@@ -53,9 +53,16 @@ onPageLoad()
 ### 动态表单Tab - 保存配置
 ```
 点击[保存] → saveMem0Config() / saveWikiConfig()
-  → 遍历aibrainConfig对应fields，收集表单值
-  → 嵌套字段处理: llm_provider → { llm: { provider: ... } }
+  → 遍历 aibrainConfig 对应 fields，收集表单值
+  → 嵌套字段处理：如 key='llm_provider' → {"llm": {"provider": ...}}
   → POST /save-aibrain-config { mem0: {...} } 或 { wiki: {...} }
+```
+
+### GPU 硬件检测特殊状态
+```
+cuda_available=false + gpu_hardware=true
+  → 显示警告提示：检测到 NVIDIA GPU，但安装的是 CPU 版 PyTorch
+  → 提供 pip 安装命令提示
 ```
 
 ### 目录浏览
@@ -104,18 +111,29 @@ POST /select-directory  → { path: "C:\\..." }
 POST /check-path { path } → { exists: true }
 ```
 
+### GPU 检测逻辑（根据 status 字段组合判断）
+| cuda_available | gpu_hardware | 显示 |
+|----------------|-------------|------|
+| true | - | 绿色提示，GPU 可用 |
+| false | true | 黄色警告，提示安装 GPU 版 PyTorch |
+| false | false | 红色提示，未检测到 GPU |
+
 ## 核心函数
 | 函数 | 说明 |
 |------|------|
-| `onPageLoad()` | 入口，加载设置页 |
+| `onPageLoad()` | 入口，调用 loadSettingsPage() |
 | `loadSettingsPage()` | 并行加载配置，渲染表单 |
 | `renderDynamicForms(config)` | 根据schema渲染mem0/wiki表单 |
 | `renderFields(fields, prefix)` | 生成表单HTML（目录字段带浏览按钮） |
 | `applySettings()` | 保存设备设置并重载模型 |
-| `saveMem0Config()` / `saveWikiConfig()` | 保存JSON配置 |
-| `browseDir(inputId)` | 打开目录选择器 |
-| `checkDirExists(inputId)` | 检查目录是否存在 |
+| `saveMem0Config()` | 收集mem0表单值并保存（含嵌套字段处理） |
+| `saveWikiConfig()` | 收集wiki表单值并保存 |
+| `browseDir(inputId)` | 调用后端目录选择器，降级使用原生input |
+| `checkDirExists(inputId)` | POST /check-path 检查目录是否存在（change/blur触发） |
+| `initDirChecks()` | 渲染后给所有目录字段绑定change/blur事件 |
 | `switchTab(tab)` | 切换Tab |
+| `selectDevice(val)` | 更新 pendingDevice 并同步UI |
+| `resetSettings()` / `resetMem0Config()` / `resetWikiConfig()` | 恢复默认 |
 
 ## 全局状态
 ```javascript
