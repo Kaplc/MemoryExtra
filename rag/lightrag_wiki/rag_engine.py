@@ -12,6 +12,10 @@ import re
 import threading
 import numpy as np
 
+# 强制离线，防止 LightRAG/fastembed 联网检查模型更新
+os.environ["HF_HUB_OFFLINE"] = "1"
+os.environ["TRANSFORMERS_OFFLINE"] = "1"
+
 logger = logging.getLogger(__name__)
 
 _rag_instance = None
@@ -259,6 +263,7 @@ def _create_rag():
         llm_model_name=llm_cfg.get("llm_model", "gpt-4o-mini"),
         chunk_token_size=cfg.get("chunk_token_size", 1200),
         chunk_overlap_token_size=100,
+        default_llm_timeout=120,  # LLM 超时 120 秒（原 360 秒）
         addon_params={
             "language": cfg.get("language", "Chinese"),
         },
@@ -325,6 +330,52 @@ def query_wiki_context(question: str, mode: str = "hybrid") -> str:
         f"rag_init={t_rag:.2f}s query={t_query:.2f}s total={total:.2f}s result_len={len(result) if result else 0}"
     )
     return result
+
+
+def _verify_vector_inserted(rel_path: str, content: str) -> bool:
+    """验证文件内容是否已真正写入向量存储
+
+    验证逻辑：直接读取 vdb_chunks.json，检查 chunk content 是否包含文件内容的特征片段。
+    比通过 rag.query 验证更可靠（不走 LLM，不依赖查询 API）。
+
+    Args:
+        rel_path: 文件相对路径（如 "project/xxx.md"）
+        content: 文件原始内容
+
+    Returns:
+        True: 向量已写入，False: 向量未写入
+    """
+    import time as _time
+    rag = get_rag()
+    _time.sleep(0.5)  # 等待 LightRAG 后台处理完成
+
+    try:
+        # 用内容的前80字符作为特征片段
+        search_text = content[:80].strip()
+        if not search_text:
+            return True
+
+        # 直接读取 vdb_chunks.json 验证
+        import json as _json
+        from .config import get_lightrag_dir
+        vdb_path = os.path.join(get_lightrag_dir(), "vdb_chunks.json")
+        with open(vdb_path, "r", encoding="utf-8") as f:
+            data = _json.load(f)
+
+        chunks = data.get("data", [])
+        for chunk in chunks:
+            chunk_content = chunk.get("content", "")
+            chunk_file = chunk.get("file_path", "") or ""
+            # 匹配：chunk 内容包含搜索文本，或 chunk 的 file_path 包含 rel_path
+            if (search_text[:30] in chunk_content[:60]) or (rel_path in chunk_file and search_text[:20] in chunk_content[:40]):
+                logger.info(f"[verify✓] 找到匹配 chunk | file={chunk_file} | snippet={chunk_content[:60]}")
+                return True
+
+        logger.warning(f"[verify✗] 未找到匹配 chunk | rel_path={rel_path}")
+        return False
+    except Exception as e:
+        logger.error(f"[verify] 验证异常: {e}")
+        return False
 
 
 def delete_document(doc_id: str) -> dict:

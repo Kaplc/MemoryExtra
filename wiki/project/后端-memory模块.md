@@ -56,6 +56,25 @@ backend/modules/memory.py
 ### POST `/update-async`
 **功能**：异步更新记忆（立即返回后台执行）
 
+### POST `/organize`
+**功能**：一键整理记忆（搜索 → 分类 → 删旧 → 存新，全自动）
+
+**请求**：`{ "query": "主题词" }`
+**响应**：
+```json
+{
+  "query": "主题词",
+  "total_found": 4,
+  "categories": { "user": [...], "project": [...], ... },
+  "organized": [{ "category": "user", "count": 2, "summary": "..." }],
+  "deleted_ids": ["id1", "id2"],
+  "organized_text": "# 记忆整理 - 主题: ...",
+  "individual_memories": [{ "id": "...", "text": "[user] ...", "category": "user" }],
+  "new_memory_ids": ["new_id1", ...],
+  "new_memory_id": "new_id1"
+}
+```
+
 ### GET `/search-history`
 **响应**：`{ "history": [{ "query": "...", "created_at": "...", "count": 3 }] }`
 
@@ -118,4 +137,4 @@ backend/modules/memory.py
 - **brain/organizer.py**：组织整理（organize_memories）
 
 ---
-*最后更新: 2026-05-01*
+*最后更新: 2026-05-02*

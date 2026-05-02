@@ -99,7 +99,7 @@ async function loadPage(page, force = false) {
     loadScripts(0);
   }
 
-  const allScripts = [`${page}.js`].concat(jsFrags.map(d => d.endsWith('.js') ? d : d + '.js'));
+  const allScripts = jsFrags.map(d => d.endsWith('.js') ? d : d + '.js').concat(`${page}.js`);
   function loadScripts(index) {
     if (index >= allScripts.length) {
       if (thisVersion !== _loadVersion) {

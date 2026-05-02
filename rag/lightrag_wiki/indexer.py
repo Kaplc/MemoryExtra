@@ -166,7 +166,7 @@ def sync_index() -> dict:
             captured = io.StringIO()
             sys.stdout = captured
             try:
-                _index_file(abs_path, rel_path)
+                verified = _index_file(abs_path, rel_path)
             finally:
                 sys.stdout = old_stdout
                 output = captured.getvalue().strip()
@@ -176,16 +176,19 @@ def sync_index() -> dict:
                         if line:
                             _log_buffer_write(line)
 
-            indexed_files[rel_path] = {
-                "md5": md5,
-                "indexed_at": datetime.now(timezone.utc).isoformat(),
-            }
-            logger.info(f"[indexer✓] meta 更新成功 | rel_path={rel_path} md5={md5}")
-            result[action].append(rel_path)
-            logger.info(f"{'索引新文件' if action == 'added' else '重新索引'}: {rel_path}")
-            # 每个文件处理完立即写盘，避免中途失败导致全部丢失，也让前端能实时看到进度
-            meta["files"] = indexed_files
-            _save_index_meta(meta_path, meta)
+            if verified:
+                indexed_files[rel_path] = {
+                    "md5": md5,
+                    "indexed_at": datetime.now(timezone.utc).isoformat(),
+                }
+                logger.info(f"[indexer✓] meta 更新成功 | rel_path={rel_path} md5={md5}")
+                result[action].append(rel_path)
+                logger.info(f"{'索引新文件' if action == 'added' else '重新索引'}: {rel_path}")
+                meta["files"] = indexed_files
+                _save_index_meta(meta_path, meta)
+            else:
+                result["errors"].append(f"{rel_path}: 向量验证失败")
+                logger.warning(f"[indexer✗] 向量验证未通过，跳过 meta 更新 | rel_path={rel_path}")
         except Exception as e:
             result["errors"].append(f"{rel_path}: {e}")
             logger.error(f"索引失败 {rel_path}: {e}")
@@ -207,6 +210,7 @@ def sync_index() -> dict:
     logger.info(f"[indexer✓] meta 已保存 | path={meta_path} files_count={len(indexed_files)}")
 
     _set_progress(total, total, "", "done")
+    _index_progress["result"] = result
     logger.info(
         f"索引同步完成: 新增 {len(result['added'])}, "
         f"更新 {len(result['updated'])}, 删除 {len(result['deleted'])}, "
@@ -236,7 +240,9 @@ def index_single_file(filename: str) -> str:
     meta = _load_index_meta(meta_path)
 
     try:
-        _index_file(abs_path, filename)
+        verified = _index_file(abs_path, filename)
+        if not verified:
+            return f"向量验证失败: {filename}"
         md5 = _compute_file_md5(abs_path)
         meta.setdefault("files", {})[filename] = {
             "md5": md5,
@@ -248,9 +254,14 @@ def index_single_file(filename: str) -> str:
         return f"索引失败 {filename}: {e}"
 
 
-def _index_file(abs_path: str, rel_path: str):
-    """将单个 MD 文件内容插入 LightRAG"""
-    from .rag_engine import insert_document
+def _index_file(abs_path: str, rel_path: str) -> bool:
+    """将单个 MD 文件内容插入 LightRAG，验证向量是否真正写入
+
+    Returns:
+        True: 向量验证通过
+        False: 向量验证失败（LightRAG 处理异常）
+    """
+    from .rag_engine import insert_document, _verify_vector_inserted
 
     logger.info(f"[indexer→] _index_file 开始 | rel_path={rel_path}")
     with open(abs_path, "r", encoding="utf-8") as f:
@@ -258,10 +269,18 @@ def _index_file(abs_path: str, rel_path: str):
 
     if not content.strip():
         logger.warning(f"[indexer] 跳过空文件: {rel_path}")
-        return
+        return True  # 空文件不报错
 
-    insert_document(content, file_path=rel_path)
+    track_id = insert_document(content, file_path=rel_path)
+    logger.info(f"[indexer] insert 返回 track_id={track_id}")
+
+    # 验证向量是否真正写入存储
+    if not _verify_vector_inserted(rel_path, content):
+        logger.error(f"[indexer✗] 向量验证失败 | rel_path={rel_path}")
+        return False
+
     logger.info(f"[indexer←] _index_file 完成 | rel_path={rel_path} content_len={len(content)}")
+    return True
 
 
 # ── 文件变化自动监听（单例）───────────────────────────────────────────────

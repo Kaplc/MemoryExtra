@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python .claude/hooks/brain-search-hook.py"
+            "command": "python E:/Project/AiBrain/.claude/hooks/brain-search-hook.py"
           }
         ]
       }
@@ -17,7 +17,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python .claude/hooks/brain-store-hook.py"
+            "command": "python E:/Project/AiBrain/.claude/hooks/brain-store-hook.py"
           }
         ]
       }
