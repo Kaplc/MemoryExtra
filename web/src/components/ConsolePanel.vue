@@ -1,12 +1,7 @@
 <script setup lang="ts">
-import { ref, onMounted, watch } from 'vue'
+import { ref, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
-import {
-  initConsoleContext,
-  executeCommand,
-  logToConsole,
-  type ConsoleLine,
-} from '@/composables/useConsole'
+import { consoleEngine, type ConsoleLine } from '@/composables/ConsoleEngine'
 import { consoleVisible } from '@/composables/useConsoleState'
 
 const router = useRouter()
@@ -16,17 +11,10 @@ const outputEl = ref<HTMLElement | null>(null)
 const inputValue = ref('')
 const lines = ref<ConsoleLine[]>([])
 
-function addLine(line: ConsoleLine) {
-  lines.value.push(line)
-  if (outputEl.value) {
-    outputEl.value.scrollTop = outputEl.value.scrollHeight
-  }
-}
-
 function handleSubmit() {
   const input = inputValue.value.trim()
   if (!input) return
-  executeCommand(input, addLine)
+  consoleEngine.execute(input)
   inputValue.value = ''
 }
 
@@ -42,17 +30,20 @@ function reload() {
 }
 
 onMounted(() => {
-  initConsoleContext({
+  consoleEngine.init({
     currentPage: route.name as string || '',
     router,
     reload,
   })
 
-  addLine(logToConsole('═══════════════════════════════', 'info'))
-  addLine(logToConsole('  AiBrain 控制台', 'success'))
-  addLine(logToConsole('═══════════════════════════════', 'info'))
-  addLine(logToConsole('输入 help 查看可用命令', 'info'))
-  addLine(logToConsole('', 'info'))
+  consoleEngine.setLogHandler((line: ConsoleLine) => {
+    lines.value.push(line)
+    if (outputEl.value) {
+      outputEl.value.scrollTop = outputEl.value.scrollHeight
+    }
+  })
+
+  consoleEngine.showWelcome()
 })
 </script>
 
