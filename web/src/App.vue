@@ -1,8 +1,31 @@
 <script setup lang="ts">
+import { onMounted, onUnmounted } from 'vue'
 import { RouterView } from 'vue-router'
 import NavSidebar from './components/NavSidebar.vue'
 import StatusBar from './components/StatusBar.vue'
 import ConsolePanel from './components/ConsolePanel.vue'
+import { toggleConsole } from '@/composables/useConsoleState'
+
+function handleGlobalKeydown(e: KeyboardEvent) {
+  // ~ 键打开/关闭控制台
+  if (e.key === '`' || e.key === '~') {
+    e.preventDefault()
+    toggleConsole()
+  }
+  // F5 刷新
+  if (e.key === 'F5' || (e.ctrlKey && e.key === 'r')) {
+    e.preventDefault()
+    window.location.reload()
+  }
+}
+
+onMounted(() => {
+  window.addEventListener('keydown', handleGlobalKeydown)
+})
+
+onUnmounted(() => {
+  window.removeEventListener('keydown', handleGlobalKeydown)
+})
 </script>
 
 <template>
