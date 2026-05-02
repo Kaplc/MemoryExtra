@@ -393,8 +393,10 @@ function drawAddedChart(data: any[], range: string) {
 }
 
 async function fetchAndDrawChart(range: string) {
+  console.log('[overview] fetchAndDrawChart start', range)
   try {
     const res = await fetchJson<any>('/chart-data?range=' + range)
+    console.log('[overview] chart data received', res.data ? res.data.length + ' points' : 'no data')
     const data = res.data || []
 
     // Update increment stat
@@ -436,8 +438,10 @@ async function fetchAddedChart() {
 }
 
 async function fetchMemoryCount() {
+  console.log('[overview] fetchMemoryCount start')
   try {
     const res = await fetchJson<any>('/memory-count')
+    console.log('[overview] memory count:', res.count)
     animateCount(statTotalDisplay, res.count || 0, 'statTotal')
     statTotalValue.value = res.count || 0
   } catch (e) {
@@ -449,6 +453,7 @@ async function fetchMemoryCount() {
 
 function setChartRange(range: 'today' | 'week' | 'month' | 'all') {
   if (range === currentChartRange.value) return
+  console.log('[overview] chart tab changed, fetching range:', range)
   currentChartRange.value = range
   if (currentDataView.value === 'added') {
     fetchAddedChart()
@@ -585,17 +590,20 @@ const chartLegendLabel = computed(() =>
 // ── Lifecycle ──────────────────────────────────────────────
 
 onMounted(async () => {
-  console.log('[OverviewView] mounted')
-  // Load chart and memory count immediately
+  console.log('[overview] onPageLoad start')
+  console.log('[overview] fetching chart and memory count')
   fetchAndDrawChart(currentChartRange.value)
   fetchMemoryCount()
 
   // Load initial page data
+  console.log('[overview] loading overview page data')
   try {
     const [st, info] = await Promise.all([
       fetchJson<any>('/status'),
       fetchJson<any>('/system-info'),
     ])
+
+    console.log('[overview] settings/status/sysinfo loaded', { cfg_exists: !!st, st_model_loaded: st.model_loaded })
 
     // Update all cards
     updateAllCardsFromStatus(st)
@@ -615,6 +623,8 @@ onMounted(async () => {
 
   // Start system info polling
   sysInfoPolling.start()
+
+  console.log('[overview] onPageLoad done')
 })
 
 onUnmounted(() => {
