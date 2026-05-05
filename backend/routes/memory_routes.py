@@ -5,7 +5,8 @@ from flask import request, jsonify, Response, stream_with_context
 from modules.brain.memory import (
     store_memory, search_memory, list_memories,
     delete_memory, update_memory, organize_memories,
-    dedup_memories, refine_memories, apply_organize
+    dedup_memories, refine_memories, apply_organize,
+    MEMORY_CATEGORY_MAP
 )
 from modules.brain.dedup import dedup_memories_iter, _dedup_pause_flag, _dedup_stop_flag
 
@@ -51,19 +52,29 @@ def register(app, ready_state, logger, stats_db):
     def mcp_store():
         data = request.get_json()
         text = (data or {}).get('text', '').strip()
+        categories = (data or {}).get('categories')
         if not text:
             return jsonify({"error": "内容不能为空"})
+        if not categories:
+            return jsonify({"error": "categories 参数不能为空，请指定记忆分类：user / fact / exp"})
         rowid = stats_db.append_stream('store', content=text, status='pending')
 
         def _bg_store():
             try:
-                # MCP 保存的记忆标记 source: mcp
-                result = store_memory(text, memory_meta={"source": "mcp"})
-                stored_texts = result.get("stored_texts", [])
-                if stored_texts:
-                    new_content = "\n".join(f"• {t}" for t in stored_texts)
+                # 按每个 category 分别存储
+                stored_all = []
+                for cat in categories:
+                    cat = cat if cat in MEMORY_CATEGORY_MAP else "user"
+                    result = store_memory(
+                        text,
+                        memory_meta={"source": "mcp", "categories": categories},
+                        category=cat
+                    )
+                    stored_all.extend(result.get("stored_texts", []))
+                if stored_all:
+                    new_content = "\n".join(f"• {t}" for t in stored_all)
                     stats_db.update_stream_content(rowid, new_content)
-                stats_db.record_action(added=1)
+                stats_db.record_action(added=len(stored_all))
                 stats_db.update_stream_status(rowid, 'done')
             except Exception as e:
                 logger.error(f"[memory/mcp/store] 后台保存失败: {e}")
@@ -76,10 +87,15 @@ def register(app, ready_state, logger, stats_db):
     def mcp_search():
         data = request.get_json()
         query = (data or {}).get('query', '').strip()
+        category = (data or {}).get('category', '').strip()
         if not query:
-            return jsonify({"results": []})
+            return jsonify({"error": "搜索关键词不能为空"})
+        if not category:
+            return jsonify({"error": "category 参数不能为空，请指定记忆分类：user / fact / exp"})
+        if category not in MEMORY_CATEGORY_MAP:
+            return jsonify({"error": f"无效的 category：{category}，可选：user / fact / exp"})
         try:
-            results = search_memory(query)
+            results = search_memory(query, category=category)
             stats_db.append_stream('search', content=query)
             return jsonify({"results": results})
         except Exception as e:

@@ -6,19 +6,23 @@
 ## 文件位置
 ```
 backend/modules/Wiki/wiki_mod.py
+backend/modules/Wiki/wiki_file.py   # WikiFile 数据类
 ```
 
-## 延迟导入机制
-RAG 引擎在首次请求时才会加载（不在模块级别 import）：
-```python
-def _get_rag_engine():
-    from rag.lightrag_wiki.rag_engine import query_wiki_context
-    from rag.lightrag_wiki.config import load_wiki_config
-    from rag.lightrag_wiki.indexer import (
-        index_single_file, sync_index, scan_wiki_files
-    )
-    return query_wiki_context, load_wiki_config, index_single_file, sync_index, scan_wiki_files
-```
+## WikiManager 类方法
+
+| 方法 | 说明 |
+|------|------|
+| `get_instance()` | 单例获取 WikiManager |
+| `scan_wiki_files(wiki_dir)` | 扫描 wiki 目录下所有 .md 文件 |
+| `index_single_file(filename)` | 索引单个文件 |
+| `sync_index()` | 增量同步索引（检测变化 + 更新 LightRAG） |
+| `start_wiki_index_background()` | 后台线程执行 sync_index |
+| `get_index_progress()` | 获取索引进度 |
+| `get_wiki_file_list(project_root)` | 获取文件列表及索引状态 |
+| `do_wiki_search(query, mode)` | 执行 wiki 搜索 |
+| `get_wiki_settings()` | 获取 wiki 配置 |
+| `save_wiki_settings(data)` | 保存 wiki 配置 |
 
 ## API 接口
 
@@ -88,16 +92,6 @@ def _get_rag_engine():
 { "status": "error", "error": "文件读取失败" }
 ```
 
-### GET `/wiki/index-log`
-**功能**：获取索引过程日志（内存缓冲区）
-
-**参数**：`?lines=20`（默认20，最大500）
-
-**响应**：
-```json
-{ "lines": ["[2026-04-30 14:30] 开始索引...", "[2026-04-30 14:30] 索引: 笔记.md (1/30)"] }
-```
-
 ### GET `/wiki/log`
 **功能**：读取后端日志文件中包含 wiki/RAG 关键词的行
 
@@ -147,6 +141,23 @@ def _get_rag_engine():
 
 **POST 只允许更新字段**：`wiki_dir`, `lightrag_dir`, `language`, `chunk_token_size`, `search_timeout`
 
+## WikiFile 数据类
+`wiki_file.py` 定义 `WikiFile` dataclass，管理单文件状态：
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `filename` | str | 文件名 |
+| `abs_path` | str | 绝对路径 |
+| `size_bytes` | int | 文件大小 |
+| `modified` | float | Unix 时间戳 |
+| `preview` | str | 前 200 字符预览 |
+| `index_status` | str | synced/out_of_sync/not_indexed |
+| `md5` | str | 索引时的 MD5 |
+| `indexed_at` | str | ISO 时间戳 |
+| `is_current` | bool | 是否正在处理 |
+
+**方法**：`mark_synced()`, `mark_out_of_sync()`, `mark_current()`, `to_dict()`
+
 ## 日志标记规范
 | 标记 | 含义 |
 |------|------|
@@ -162,11 +173,11 @@ def _get_rag_engine():
 |------|------|
 | `rag/lightrag_wiki/rag_engine.py` | RAG 搜索引擎 |
 | `rag/lightrag_wiki/config.py` | 配置读写 |
-| `rag/lightrag_wiki/indexer.py` | 文件索引器、进度/日志管理 |
+| `backend/modules/Wiki/wiki_file.py` | WikiFile 数据类 |
 | `~/.aibrain/config/wiki.json` | Wiki 配置文件（扁平存储） |
 
 ## 前端集成
-- **Wiki 前端**：消费 `/wiki/list`、`/wiki/index-progress`、`/wiki/index-log`、`/wiki/settings`
+- **Wiki 前端**：消费 `/wiki/list`、`/wiki/index-progress`、`/wiki/settings`
 - **记忆流前端**：通过 Wiki MCP 工具调用 wiki_search/wiki_list
 
 ---

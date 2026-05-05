@@ -117,31 +117,49 @@ def wiki_list() -> list[dict]:
 
 
 @mcp.tool()
-def wiki_index() -> str:
-    """Manually trigger a full re-index of all .md files in the wiki directory.
-    Use this after bulk changes or when search results seem stale.
+def wiki_index(query: str, mode: str = "naive") -> str:
+    """根据内容搜索 Wiki 知识库，返回匹配的文件路径（去重）。
+
+    Args:
+        query: 搜索关键词或问题
+        mode: 搜索模式 - naive/local/global/hybrid/mix（默认 naive，最快）
     """
     t0 = _time.time()
-    logger.info("[MCP→] wiki_index 调用开始")
-    resp = _api_call("/wiki/index", {})
-    total = _time.time() - t0
+    query_preview = query[:50]
+    logger.info(f"[MCP→] wiki_index 搜索开始 query={query_preview} mode={mode}")
+
+    # 调用 wiki/search 搜索内容
+    resp = _api_call("/wiki/search", {"query": query, "mode": mode})
     if "error" in resp:
-        logger.error(f"[MCP✗] wiki_index 后端返回错误: {resp['error']}")
-        return f"索引出错: {resp['error']}"
-    logger.info(f"[MCP←] wiki_index 完成 | mcp_total={total:.1f}s")
-    parts = []
-    if resp.get("added"):
-        parts.append(f"新增索引: {', '.join(resp['added'])}")
-    if resp.get("updated"):
-        parts.append(f"更新索引: {', '.join(resp['updated'])}")
-    if resp.get("deleted"):
-        parts.append(f"移除索引: {', '.join(resp['deleted'])}")
-    if resp.get("unchanged"):
-        parts.append(f"未变: {resp['unchanged']} 个文件")
-    if resp.get("errors"):
-        parts.append(f"错误: {'; '.join(resp['errors'])}")
-    if not parts:
-        return "wiki 目录为空，无文件可索引。"
+        logger.error(f"[MCP✗] wiki_index 搜索失败: {resp['error']}")
+        return f"搜索出错: {resp['error']}"
+
+    result_text = resp.get("result", "")
+    if not result_text or not result_text.strip():
+        return "未找到匹配的内容。"
+
+    # 从 Reference Document List 中提取文件路径
+    # 格式: [id] path
+    import re
+    paths = set()
+    # 查找 "Reference Document List" 之后的行
+    ref_match = re.search(r"Reference Document List.*?\n(.*?)$", result_text, re.DOTALL)
+    if ref_match:
+        ref_section = ref_match.group(1)
+        for line in ref_section.split("\n"):
+            m = re.match(r"\[\d+\]\s+(.+)", line.strip())
+            if m:
+                paths.add(m.group(1))
+
+    if not paths:
+        elapsed = _time.time() - t0
+        return f"[搜索完成, 耗时: {elapsed:.1f}s] 未找到匹配的文件。"
+
+    elapsed = _time.time() - t0
+    sorted_paths = sorted(paths)
+    parts = [f"[匹配 {len(sorted_paths)} 个文件, 耗时: {elapsed:.1f}s]"]
+    for p in sorted_paths:
+        parts.append(f"  {p}")
     return "\n".join(parts)
 
 

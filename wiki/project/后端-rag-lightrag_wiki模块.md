@@ -8,7 +8,6 @@
 rag/lightrag_wiki/
 ├── __init__.py      # 包入口（无导出）
 ├── config.py        # 配置管理（wiki.json 读写）
-├── indexer.py       # 索引管理（增量索引 + 进度追踪）
 └── rag_engine.py    # RAG 引擎封装（插入/查询/验证）
 ```
 
@@ -45,76 +44,6 @@ rag/lightrag_wiki/
 **功能**：获取索引元数据文件路径
 - 路径：`{lightrag_dir}/.wiki_index_meta.json`
 - 元数据记录每个文件的 MD5 和索引时间
-
----
-
-## indexer.py — 索引管理
-
-### `scan_wiki_files(wiki_dir: str) -> list[str]`
-**功能**：扫描 wiki 目录下所有 `.md` 文件
-**返回**：`.md` 文件的绝对路径列表（递归扫描）
-
-### `sync_index() -> dict`
-**功能**：增量同步索引（检测变化 + 更新 LightRAG）
-**返回**：
-```python
-{
-    "added": ["project/new.md"],      # 新增文件
-    "updated": ["project/changed.md"], # MD5 变化的文件
-    "deleted": ["project/removed.md"], # 已删除的文件
-    "unchanged": 22,                  # 无变化的文件的数量
-    "errors": [],                     # 索引失败的文件
-}
-```
-**流程**：
-1. 扫描 wiki 目录
-2. 计算每个文件的 MD5，与 `.wiki_index_meta.json` 对比
-3. 对新增/变化的文件调用 `_index_file()` 插入
-4. 检测已删除的文件，从元数据中移除
-5. 更新 `.wiki_index_meta.json`
-
-### `index_single_file(filename: str) -> str`
-**功能**：索引单个文件（写入后自动调用）
-**参数**：`filename` 为相对于 wiki_dir 的文件名（如 `"project/test.md"`）
-**返回**：索引结果描述（成功/失败原因）
-**注意**：只更新元数据，不重新全量扫描
-
-### `_index_file(abs_path: str, rel_path: str) -> bool`
-**功能**：将单个 MD 文件内容插入 LightRAG，并通过 `aget_docs_by_track_id` 验证处理完成
-**流程**：
-1. `insert_document()` 入队（异步）
-2. `_verify_vector_inserted()` 轮询 doc_status 直到 `status=processed`
-**返回**：`True` = 插入并验证成功，`False` = 失败
-
-### `get_index_progress() -> dict`
-**功能**：获取当前索引进度
-**返回**：
-```python
-{
-    "running": False,           # 是否有索引任务在运行
-    "done": 5,                  # 已完成的文件数
-    "total": 10,                # 总共需要处理的文件数
-    "current_file": "xxx.md",   # 当前正在处理的文件
-    "status": "done",           # idle / running / done / error
-    "result": {...},            # sync_index() 的返回结果
-}
-```
-
-### `get_index_log(lines: int = 50) -> dict`
-**功能**：获取最近的索引日志
-**返回**：
-```python
-{
-    "lines": ["[14:30:01] 索引: xxx.md (3/10)", ...],
-    "total": 15,
-}
-```
-
-### `_start_wiki_watcher()`
-**功能**：启动 watchdog 文件监听（文件变化时自动增量索引）
-- 监听 `.md` 文件的 create/modify/delete 事件
-- 文件修改/新增时自动调用 `index_single_file()`
-- 已在 `wiki_routes.py` 的 `wiki_list()` 中自动调用（惰性单例）
 
 ---
 
@@ -225,9 +154,9 @@ _create_rag()
 ---
 
 ## 相关模块
-- **WikiManager** (`backend/modules/Wiki/wiki_mod.py`)：调用 `rag_engine` 和 `indexer`
+- **WikiManager** (`backend/modules/Wiki/wiki_mod.py`)：调用 `rag_engine`，索引逻辑统一在 WikiManager 内部
 - **wiki_routes** (`backend/routes/wiki_routes.py`)：提供 HTTP API 封装
 
 ---
 
-*最后更新: 2026-05-04*
+*最后更新: 2026-05-05*

@@ -289,8 +289,8 @@ def _create_rag():
 
 
 def insert_document(text: str, file_path: str | None = None) -> str:
-    """插入文档到 LightRAG 索引"""
-    rag = get_rag()
+    """插入文档到 LightRAG 索引（每个文档创建独立 RAG 实例，避免跨事件循环锁问题）"""
+    rag = _create_rag()
     kwargs = {"input": text}
     if file_path:
         kwargs["file_paths"] = file_path

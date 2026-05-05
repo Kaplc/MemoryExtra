@@ -110,6 +110,10 @@ class WikiManager:
 
     def sync_index(self) -> dict:
         """增量同步索引"""
+        # 重置 RAG 实例，避免旧 event loop 残留导致 asyncio Lock 失效
+        from rag.lightrag_wiki.rag_engine import reset_rag
+        reset_rag()
+
         from rag.lightrag_wiki.config import get_wiki_dir, get_index_meta_path
 
         wiki_dir = get_wiki_dir()
@@ -211,25 +215,28 @@ class WikiManager:
             return
 
         class _WikiChangeHandler(FileSystemEventHandler):
-            def on_modified(self, event):
+            def __init__(handler_self, wm):
+                handler_self._wm = wm
+
+            def on_modified(handler_self, event):
                 if isinstance(event, FileModifiedEvent) and event.src_path.lower().endswith('.md'):
                     rel = os.path.relpath(event.src_path, wiki_dir)
                     logger.info(f"[wiki-watcher] 检测到文件变化: {rel}")
-                    self.index_single_file(rel)
+                    handler_self._wm.index_single_file(rel)
 
-            def on_created(self, event):
+            def on_created(handler_self, event):
                 if not event.is_directory and event.src_path.lower().endswith('.md'):
                     rel = os.path.relpath(event.src_path, wiki_dir)
                     logger.info(f"[wiki-watcher] 检测到新文件: {rel}")
-                    self.index_single_file(rel)
+                    handler_self._wm.index_single_file(rel)
 
-            def on_deleted(self, event):
+            def on_deleted(handler_self, event):
                 if not event.is_directory and event.src_path.lower().endswith('.md'):
                     rel = os.path.relpath(event.src_path, wiki_dir)
                     logger.warning(f"[wiki-watcher] 检测到文件删除: {rel}（请手动重建索引清理残留向量）")
 
         observer = Observer()
-        observer.schedule(_WikiChangeHandler(), wiki_dir, recursive=True)
+        observer.schedule(_WikiChangeHandler(self), wiki_dir, recursive=True)
         observer.daemon = True
         observer.start()
         self._wiki_watcher = observer

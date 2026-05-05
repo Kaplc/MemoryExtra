@@ -109,7 +109,6 @@ AiBrain 系统
 - **位置**: `rag/lightrag_wiki/`
 - **核心组件**:
   - `rag_engine.py` - RAG引擎
-  - `indexer.py` - 文档索引
   - `config.py` - 配置管理
 - **知识图谱**:
   - **实体图**: 文档内实体关系
