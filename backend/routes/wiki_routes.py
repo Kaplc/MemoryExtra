@@ -53,7 +53,7 @@ def register(app, ready_state, logger, stats_db):
     @app.route('/wiki/index-progress', methods=['GET'])
     def wiki_index_progress():
         """获取 Wiki 索引进度"""
-        progress = _wiki_mgr.get_wiki_index_progress()
+        progress = _wiki_mgr.get_index_progress()
         logger.debug(f"[API→] /wiki/index-progress: {progress}")
         return jsonify(progress)
 

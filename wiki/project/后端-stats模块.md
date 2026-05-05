@@ -1,29 +1,24 @@
 # 后端 - Stats 模块（图表统计）
 
 ## 概述
-`stats.py` 提供记忆数据的统计图表 API，支持按小时/日聚合的时间维度数据。
+`stats_routes.py` 提供记忆数据的统计图表 API，支持按小时/日聚合的时间维度数据。
 
 ## 文件位置
 ```
-backend/modules/stats.py
+backend/routes/stats_routes.py
 ```
 
 ## API 接口
 
 ### GET `/chart-data`
-**查询参数**：`range=today|week|month`
+**查询参数**：`range=today|week|month|all`
 
 **响应格式**：
 ```json
 {
   "range": "week",
   "data": [
-    {
-      "date": "2026-04-23",
-      "added": 5,
-      "updated": 2,
-      "total": 123
-    }
+    { "date": "2026-04-23", "added": 5, "updated": 2, "total": 123 }
   ]
 }
 ```
@@ -47,17 +42,17 @@ backend/modules/stats.py
 
 ## 内部函数
 
-### `_get_hourly_data(stats_db)`
+### `StatsManager.get_hourly_data(stats_db)`
 获取最近24小时按小时聚合数据：
 1. 当前整点 - 23小时 = 起始整点
 2. 从 `stream` 表查询 24 小时内记录
 3. 按 `strftime('%Y-%m-%d %H:00:00', created_at)` 分组
 4. 累加 24 小时前累计值 + 每小时 added
 
-### `_get_daily_data(stats_db, start_date, end_date, range_type)`
+### `StatsManager.get_daily_data(stats_db, start_date, end_date, range_type)`
 获取指定日期范围内的每日数据，从 `daily_stats` 表查询。
 
-### `_get_update_counts(stats_db, start_date, end_date)`
+### `StatsManager.get_update_counts(stats_db, start_date, end_date)`
 从 `stream` 表查询指定日期范围内的 update 操作数。
 
 ## 前端集成
@@ -65,4 +60,4 @@ backend/modules/stats.py
 - **ECharts**：累计曲线（total 字段）、新增曲线（added 字段）
 
 ---
-*最后更新: 2026-05-01*
+*最后更新: 2026-05-05*

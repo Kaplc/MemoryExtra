@@ -5,9 +5,22 @@
 
 ## 文件位置
 ```
-web/modules/overview/
-├── overview.html   # HTML模板 + CSS（内联）
-└── overview.js     # 页面逻辑
+web/src/views/OverviewView/
+├── OverviewView.vue      # Vue组件，HTML模板 + CSS（内联）
+├── index.ts              # 导出 overviewViewModel 单例，聚合所有卡片
+├── ModelCard/
+│   ├── ModelCard.vue     # 模型状态卡片
+│   └── ModelCard.ts     # ModelCard 类（轮询 /overview/model）
+├── QdrantCard/
+│   ├── QdrantCard.vue    # Qdrant 状态卡片
+│   └── QdrantCard.ts     # QdrantCard 类（轮询 /overview/qdrant）
+├── FlaskCard/
+│   ├── FlaskCard.vue     # Flask 状态卡片（含重启按钮）
+│   └── FlaskCard.ts      # FlaskCard 类（轮询 /overview/flask）
+├── DeviceCard/
+│   ├── DeviceCard.vue    # 系统信息卡片（CPU/内存/GPU）
+│   └── DeviceCard.ts     # DeviceCard 类（轮询 /overview/system-info）
+└── CardRegistry.ts       # 动态注册卡片列表
 ```
 
 ## 界面布局
@@ -17,7 +30,7 @@ web/modules/overview/
 │ badge OK  │ badge OK │ 重启按钮  │ CPU/RAM   │
 └──────────┴──────────┴──────────┴──────────┘
 ┌──────────────────────────────────────────────┐
-│ 记忆数据  [累计● 新增●] [24h][7d][30d][全部]   │  ← 数据视图Tab + 图表Tab
+│ 记忆数据  [累计● 新增●] [近24h][7d][30d][全部]   │  ← 数据视图Tab + 图表Tab
 │ ┌──────────────────────────────────────────┐  │
 │ │  ECharts折线图（累计=紫色 / 新增=绿色）    │  │  ← 图表主体
 │ └──────────────────────────────────────────┘  │
@@ -27,149 +40,132 @@ web/modules/overview/
 
 ## 交互逻辑流
 
-### 页面加载（onPageLoad）
+### 页面加载（onMounted）
 ```
-onPageLoad()
-  ├── fetchAndDrawChart(_currentChartRange)   ← 立即加载图表（默认today视图）
-  ├── fetchMemoryCount()                      ← 立即加载记忆总数（带递增动画）
-  ├── loadOverviewPage()                      ← 并行请求 settings/status/system-info
-  │     ├── 更新 Flask 卡片（端口/PID/运行时长/热重载开关）
-  │     ├── 更新模型卡片（名称 badge）
-  │     ├── 更新 Qdrant 卡片（host:port、collection、存储、维度等）
-  │     └── 更新设备卡片（CPU%/温度、内存、GPU名称/显存/温度）
-  ├── 启动模型轮询（2秒间隔，model_loaded && qdrant_ready 后停止）
-  ├── 启动 Qdrant 轮询（2秒间隔，qdrant_ready 后停止）
-  ├── 启动系统信息轮询（1秒间隔，持续更新）
-  └── 绑定图表Tab点击事件
+overviewViewModel.onMounted()
+  ├── modelCard.start()         ← 2秒轮询 /overview/model
+  ├── qdrantCard.start()        ← 2秒轮询 /overview/qdrant（800ms延迟）
+  ├── flaskCard.start()         ← 2秒轮询 /overview/flask（1600ms延迟）
+  ├── deviceCard.start()        ← 1秒轮询 /overview/system-info（500ms延迟）
+  ├── fetchAndDrawChart()       ← 立即加载图表（默认today视图）
+  └── fetchMemoryCount()        ← 立即加载记忆总数
 ```
 
-### Flask 重启流程
+### Flask 重启流程（flaskCard.restart）
 ```
-restartFlask()
-  → confirm() 二次确认
-  → btn.textContent = '重启中...'
-  → POST /flask/restart
-      → 后端写 backend/.restart_flask 标志文件
-  → startFlaskPoll(true, onBack)
-      轮询 GET /status，等待旧Flask死去：
-      → 请求失败 → hasFailed=true，badge显示"重启Xs"
-      → 请求成功 && hasFailed → 触发 onBack:
-          onBack()
-            → btn 恢复可用
-            → _refreshAllCards(st)        ← 更新四张卡片
-            → 销毁旧图表实例
-            → fetchAndDrawChart()          ← 重画图表
-            → fetchMemoryCount()            ← 刷新记忆数
-            → startModelPoll()             ← 重启模型轮询
-            → startQdrantPoll()            ← 重启Qdrant轮询
+restart()
+  → POST /overview/flask/restart {}
+  → 启动15秒倒计时，显示 restarting badge
+  → 15秒后自动恢复（不再等待后端实际重启）
 ```
 
-### 图表数据视图切换
+### 图表数据视图切换（setDataView）
 ```
-点击 [累计] → _currentDataView='cumulative'
-  → 显示 chartView，隐藏 addedView
-  → 图例切换为紫色"累计"
-  → fetchAndDrawChart(_currentChartRange)
+点击 [累计曲线] → currentDataView='cumulative'
+  → drawCumulativeChart() 紫色折线图
 
-点击 [新增] → _currentDataView='added'
-  → 显示 addedView，隐藏 chartView
-  → 图例切换为绿色"新增"
-  → fetchAddedChart(_currentChartRange)
+点击 [新增曲线] → currentDataView='added'
+  → fetchAddedChart() 获取数据 → drawAddedChart() 绿色折线图
 ```
 
-### 图表时间范围切换
+### 图表时间范围切换（setChartRange）
 ```
-点击 [24h / 7d / 30d / 全部]
-  → 切换 active 样式
-  → 根据 _currentDataView 调用对应图表刷新
+点击 [近24h / 7天 / 30天 / 全部]
+  → 切换 currentChartRange
   → 累计视图：fetchAndDrawChart(range)
   → 新增视图：fetchAddedChart(range)
 ```
 
 ## 数据流
 
-### 状态卡片数据（来自 GET /status）
-| 卡片 | 字段 |
-|------|------|
-| 模型 | `model_loaded`, `embedding_model`, `model_size` |
-| Qdrant | `qdrant_ready`, `qdrant_host`, `qdrant_port`, `qdrant_collection`, `qdrant_storage_path`, `qdrant_disk_size`, `qdrant_top_k`, `embedding_dim` |
-| Flask | `flask_port`, `flask_pid`, `flask_uptime`, `flask_reload` |
+### 卡片轮询 API（各卡片独立轮询）
+| 卡片 | API | 响应字段 |
+|------|-----|---------|
+| ModelCard | `GET /overview/model` | `loaded`, `embedding_model`, `embedding_dim` |
+| QdrantCard | `GET /overview/qdrant` | `ready`, `host`, `port`, `disk_size` |
+| FlaskCard | `GET /overview/flask` | `pid`, `port`, `uptime` |
+| DeviceCard | `GET /overview/system-info` | `cpu_percent`, `memory_percent`, `gpu_name` |
 
-### 系统信息（来自 GET /system-info）
-| 字段 | 说明 |
-|------|------|
-| `platform` | 系统平台 |
-| `cpu_percent` | CPU 使用率 |
-| `cpu_temperature` | CPU 温度（可选） |
-| `memory_total/used/percent` | 内存总量/已用/百分比 |
-| `gpu.name/memory_total/memory_used/temperature` | GPU 信息（可选） |
-
-### 图表数据（来自 GET /chart-data?range=xxx）
-```
-返回: { data: [{ date: "2026-04-30", added: 5, total: 123 }] }
+### 图表数据（GET /chart-data?range=xxx）
+```json
+{ "data": [{ "date": "2026-04-30", "added": 5, "total": 123 }] }
 累计曲线: y轴 = data[].total
-新增曲线: y轴 = data[].added（minInterval:1 强制整数刻度）
+新增曲线: y轴 = data[].added（绿色）
 ```
 
-### 记忆总数（来自 GET /memory-count）
-```
-返回: { count: 1234 }
+### 记忆总数（GET /memory/count）
+```json
+{ "count": 1234 }
 ```
 
-## 核心函数
-| 函数 | 说明 |
+## 核心类
+
+### ModelCard（index.ts:40）
+| 方法 | 说明 |
 |------|------|
-| `onPageLoad()` | 入口：加载图表+总数+页面数据，启动各轮询 |
-| `cleanup()` | 清除所有定时器，销毁图表实例（`getDom()` 空保护） |
-| `loadOverviewPage()` | 并行加载 settings/status/system-info，更新四张卡片 |
-| `startModelPoll()` | 2秒轮询 /status，模型就绪后停止 |
-| `startFlaskPoll(waitRestart, onBack)` | 1秒轮询等待 Flask 重启恢复 |
-| `startQdrantPoll()` | 2秒轮询 /status，Qdrant 就绪后停止 |
-| `restartFlask()` | 重启按钮：POST /flask/restart，触发 onBack 恢复UI |
-| `_refreshAllCards(st)` | 用最新状态刷新所有卡片 |
-| `fetchAndDrawChart(range)` | 获取累计曲线数据并渲染 |
-| `fetchAddedChart()` | 获取新增曲线数据并渲染 |
-| `drawEChart(data, range)` | ECharts 渲染累计曲线（紫色） |
-| `drawAddedChart(data, range)` | ECharts 渲染新增曲线（绿色，minInterval:1） |
+| `poll()` | GET /overview/model，badge='ok'/'loading'/'err' |
+| `start()` / `stop()` | 启动/停止轮询 |
+| `updateFromData(d)` | 更新 badge 和 subText |
+
+### QdrantCard（index.ts:82）
+| 方法 | 说明 |
+|------|------|
+| `poll()` | GET /overview/qdrant，badge='ok'/'loading'/'err' |
+| `updateFromData(d)` | 计算磁盘大小(GB)，更新 detail |
+
+### FlaskCard（index.ts:119）
+| 方法 | 说明 |
+|------|------|
+| `poll()` | GET /overview/flask，更新 uptime |
+| `restart()` | POST /overview/flask/restart，15秒倒计时 |
+| `cleanup()` | 清除重启定时器 |
+
+### DeviceCard（index.ts:181）
+| 方法 | 说明 |
+|------|------|
+| `poll()` | GET /overview/system-info，合并更新 info |
+| `updateFromData(d)` | 部分更新（保留旧值） |
+
+### OverviewViewModel（index.ts:203）
+| 方法 | 说明 |
+|------|------|
+| `onMounted()` | 启动所有卡片轮询 + 加载图表+总数 |
+| `onUnmounted()` | 清除动画定时器，停止所有轮询 |
+| `redrawCharts()` | 重新绘制图表（activated 时调用） |
+| `fetchAndDrawChart(range)` | 获取累计曲线数据并渲染（紫色） |
+| `fetchAddedChart()` | 获取新增曲线数据并渲染（绿色） |
 | `fetchMemoryCount()` | 获取记忆总数并播放递增动画 |
-| `animateCount(el, target)` | 数字递增动画（50ms/step，分10步） |
+| `animateCount(el, target, key)` | 数字递增动画（600ms，立方缓动） |
+| `setChartRange(range)` | 切换图表时间范围 |
+| `setDataView(view)` | 切换累计/新增视图 |
 
-## 全局状态
-```javascript
-var _modelTimer     = null;   // 模型轮询定时器（2秒）
-var _qdrantTimer    = null;   // Qdrant轮询定时器（2秒）
-var _flaskTimer     = null;   // Flask重启等待定时器（1秒）
-var _sysInfoTimer   = null;   // 系统信息轮询（1秒）
-var _resizeTimer    = null;   // 防抖resize定时器
-var _currentChartRange = 'today';  // 当前图表时间范围
-var _currentDataView   = 'cumulative';  // 当前数据视图
-var _chartInstance     = null;  // 累计图表ECharts实例
-var _addedChartInstance = null;  // 新增图表ECharts实例
-var _chartData          = null;  // 累计图表原始数据（tooltip用）
-var _addedChartData     = null;  // 新增图表原始数据
-var _flaskRestarting    = false; // 重启中标志
+## 全局状态（overviewViewModel 单例）
+```typescript
+// 卡片实例
+modelCard: ModelCard
+qdrantCard: QdrantCard
+flaskCard: FlaskCard
+deviceCard: DeviceCard
+cardList: OverviewCard[]  // 从 CardRegistry 动态获取
+
+// Chart state
+currentChartRange: 'today' | 'week' | 'month' | 'all'
+currentDataView: 'cumulative' | 'added'
+statTotalValue: number
+statIncrementValue: number
+addedStatValue: number
 ```
 
-## 重启后端交互链
-```
-前端点击[重启]
-  → POST /flask/restart              (status.py:130)
-      → 写 backend/.restart_flask 标志文件
-  → 1秒轮询 GET /status               (status.py:22)
-  → PM monitor() 检测到标志文件        (process_manager.py:277)
-  → netstat 找端口 PID                 (process_manager.py:137)
-  → taskkill 杀死旧 Flask             (process_manager.py:145)
-  → socket.bind 等待端口释放           (process_manager.py:180)
-  → Popen 启动新 Flask                (process_manager.py:95)
-  → _wait_url /health 等待就绪        (process_manager.py:103)
-  → 前端轮询成功 → onBack()           (overview.js:650)
-```
+## 后端相关文件
+| 文件 | 作用 |
+|------|------|
+| `backend/routes/overview_routes.py` | 提供 `/overview/model`, `/overview/qdrant`, `/overview/flask`, `/overview/system-info`, `/overview/flask/restart` |
+| `backend/routes/stats_routes.py` | 提供 `/chart-data` |
+| `backend/modules/SystemInfo/system_info_mod.py` | 系统信息采集 |
 
 ## 相关模块
 - **Settings 模块**: 模型/设备配置，保存触发模型重载
 - **Memory 模块**: 记忆管理，存入/删除后刷新图表
-- **Router 模块**: 全局状态栏状态点轮询（每3秒 GET /status）
 
 ---
-
-*最后更新: 2026-05-01*
+*最后更新: 2026-05-05*

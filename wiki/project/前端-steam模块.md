@@ -1,71 +1,78 @@
 # 前端 - Steam 模块（记忆流）
 
 ## 模块概述
-记忆流页面，双栏布局展示 MCP 调用记录和查询记录。2 秒轮询全量列表 + 1 秒轮询 pending 状态，增量 DOM 更新避免闪烁。
+记忆流页面，双栏布局展示 MCP 调用记录（store）和查询记录（search）。2 秒轮询全量列表 + 1 秒轮询 pending 状态，状态变化时更新 DOM 避免闪烁。新条目有 slideIn 动画。
 
 ## 文件位置
 ```
-web/modules/steam/
-├── steam.html   # HTML模板 + CSS（内联）
-└── steam.js     # 页面逻辑
+web/src/views/StreamView/
+├── StreamView.vue        # Vue组件，HTML模板 + CSS（内联）
+└── StreamViewModel.ts    # StreamViewModel 类，单例 streamViewModel
 ```
 
 ## 界面布局
 ```
 ┌─────────────────────────────────────────────────────┐
-│ 记忆流                        MCP 12 条 / 搜索 8 条  │  ← 总计数
+│ 记忆流                        MCP 12 条 / 搜索 8 条  │  ← 总计数（computed）
 ├─────────────────────┬───────────────────────────────┤
-│ ● MCP调用            │ ● 查询记忆                    │
+│ ● MCP调用            │ ● 查询记忆                   │
 │  存入 文本...  ✓      │  搜索 关键词    ✓              │
 │  存入 文本...  ⟳      │  搜索 关键词    ⟳              │  ← ⟳=pending
 │  存入 文本...  ✗      │  搜索 关键词    ✓              │  ← ✗=error
 └─────────────────────┴───────────────────────────────┘
 ```
 
+### 状态图标
+| 状态 | 图标 |
+|------|------|
+| pending | 旋转 spinner |
+| done | ✓（绿色） |
+| error | ✗（红色） |
+
 ## 交互逻辑流
 
-### 页面加载（onPageLoad）
+### 页面加载（streamViewModel.onMounted）
 ```
-onPageLoad()
-  ├── loadStream()                ← 立即加载一次全量
-  ├── setInterval(loadStream, 2000)  ← 2秒轮询全量列表
-  └── startStatusPoll()             ← 1秒轮询 pending 状态
+onMounted()
+  ├── loadStream()         ← 立即加载一次全量
+  ├── _streamPoll.start() ← 2秒轮询全量列表
+  └── _statusPoll.start() ← 1秒轮询 pending 状态
 ```
 
-### 主轮询（2秒间隔）
+### 主轮询（loadStream，2秒间隔）
 ```
 loadStream() (每2秒)
   ├── 并行请求:
-  │     ├── GET /stream?action=store&days=3    ← MCP调用记录
-  │     └── GET /stream?action=search&days=3  ← 查询记录
-  ├── 更新总计数和各栏计数
-  ├── renderList('storeList', storeItems)     ← 增量更新左侧
-  └── renderList('searchList', searchItems)    ← 增量更新右侧
+  │     ├── GET /stream/api?action=store&days=3   ← MCP写入记录
+  │     └── GET /stream/api?action=search&days=3  ← 查询记录
+  ├── 更新 storeItems/searchItems
+  ├── 更新 storeTotal/searchTotal
+  └── requestAnimationFrame → markKnown() 标记已知ID
 ```
 
-### 状态轮询（1秒间隔，仅有 pending 时触发）
+### 状态轮询（pollStatus，1秒间隔，仅 pending 时触发）
 ```
-startStatusPoll() (每1秒)
-  → 查找所有 .steam-spinner 的元素（pending状态）
-  → 如无 pending，跳过
-  → 并行请求 store/search 数据
-  → 只更新 pending 记录的状态图标（done→✓，error→✗）
+pollStatus()
+  → 检查是否有 pending 状态的记录
+  → 无 pending → 跳过
+  → 并行请求 store/search 全量数据
+  → 构建 id→status 映射
+  → 遍历当前列表，只更新 status='pending' 且新状态不是 pending 的项
 ```
 
-### 记录渲染（增量 DOM 更新）
+### 新条目动画
 ```
-renderList(listId, items)
-  → 已有元素：比较 outerHTML，仅在状态变化时更新 DOM
-  → 新增元素：创建 DOM，按 index 插入到正确位置
-  → 已消失元素：从列表移除
+isNew(id) → knownIds.has(String(id)) === false
+markKnown(items) → 遍历添加 id 到 knownIds
+首次渲染时 .new 类触发 slideIn 动画（300ms）
 ```
 
 ## 数据流
 
 ### API 接口
 ```
-GET /stream?action=store&days=3    ← 获取近3天MCP写入记录
-GET /stream?action=search&days=3  ← 获取近3天查询记录
+GET /stream/api?action=store&days=3    ← 获取近3天MCP写入记录
+GET /stream/api?action=search&days=3   ← 获取近3天查询记录
 ```
 
 ### 返回数据格式
@@ -76,8 +83,8 @@ GET /stream?action=search&days=3  ← 获取近3天查询记录
       "id": 1,
       "action": "store",
       "content": "记忆文本...",
-      "status": "done",
       "memory_id": "xyz789",
+      "status": "done",
       "created_at": "2026-04-30T14:30:25"
     }
   ],
@@ -85,31 +92,67 @@ GET /stream?action=search&days=3  ← 获取近3天查询记录
 }
 ```
 
-## 核心函数
-| 函数 | 说明 |
-|------|------|
-| `onPageLoad()` | 入口：加载一次 + 启动2秒轮询 + 启动1秒状态轮询 |
-| `cleanup()` | 清除 _streamTimer 和 _statusTimer |
-| `loadStream()` | 并行获取 store/search 全量数据，渲染双栏 |
-| `startStatusPoll()` | 1秒轮询，仅更新 pending 记录的状态图标 |
-| `renderList(listId, items)` | 增量 DOM 更新（已有/新增/消失分类处理） |
+### status 字段枚举
+| 值 | 含义 |
+|----|------|
+| `pending` | 异步执行中（旋转图标） |
+| `done` | 执行成功（绿色✓） |
+| `error` | 执行失败（红色✗） |
 
-## 全局状态
-```javascript
-var _streamTimer  = null;  // 主轮询定时器（2秒）
-var _statusTimer = null;  // 状态轮询定时器（1秒）
+## StreamViewModel 核心方法
+
+### 轮询方法
+| 方法 | 说明 |
+|------|------|
+| `loadStream()` | 2秒轮询，获取 store/search 全量数据 |
+| `pollStatus()` | 1秒轮询，只更新 pending 记录的状态图标 |
+
+### 辅助方法
+| 方法 | 说明 |
+|------|------|
+| `getActionLabel(action)` | 'store'→'存入'，'search'→'搜索'，其他→'删除' |
+| `formatTime(createdAt)` | 提取 HH:mm:ss（slice 11,19） |
+| `getItemText(item)` | 返回 content 或 memory_id |
+| `isNew(id)` | 检查是否首次出现（触发动画） |
+| `markKnown(items)` | 将 item.id 添加到 knownIds |
+| `getStatusIcon(status)` | 返回 'pending'/'done'/'error'/'' |
+
+## 全局状态（streamViewModel 单例）
+```typescript
+// Data
+storeItems: Ref<StreamItem[]>
+searchItems: Ref<StreamItem[]>
+storeTotal: number
+searchTotal: number
+
+// Computed
+totalCount: string  // "MCP N 条 / 搜索 M 条"
+storeCountText: string  // "N 条"
+searchCountText: string  // "M 条"
+
+// Private
+private _statusPoll: usePolling  // 1秒
+private _streamPoll: usePolling  // 2秒
 ```
 
-## 视觉特效
-- pending 状态：旋转 loading 图标
-- done 状态：绿色 ✓
-- error 状态：红色 ✗
-- 绿点 = MCP 调用（store），蓝点 = 查询（search）
+## StreamItem 接口
+```typescript
+interface StreamItem {
+  id: number
+  action: 'store' | 'search' | 'delete'
+  content: string
+  memory_id: string | null
+  status: 'pending' | 'done' | 'error' | ''
+  created_at: string
+}
+```
 
-## 相关模块
-- **Memory 模块**: 搜索/保存/整理记忆
-- **MCP 服务**: brain_mcp 产生 store/search 调用记录
+## 后端相关文件
+| 文件 | 作用 |
+|------|------|
+| `backend/routes/stream_routes.py` | 提供 `/stream/api` 端点 |
+| `backend/routes/stats_routes.py` | 统计数据库，记录 stream 数据 |
+| `backend/modules/brain/memory.py` | MCP store 时写入 stream |
 
 ---
-
-*最后更新: 2026-05-01*
+*最后更新: 2026-05-05*

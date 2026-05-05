@@ -148,9 +148,14 @@ export class WikiViewModel {
   /** 推进度时把当前文件从 out_of_sync/not_indexed 改成 synced */
   private _advanceProgress(done: number, total: number, currentRelPath: string): void {
     console.log(`[WikiView] _advanceProgress: done=${done}/${total} current=${currentRelPath}`)
+    // 标准化路径分隔符（Windows \ → /）
+    const normalizedPath = currentRelPath.replace(/\\/g, '/')
     this.rawFiles.value.forEach(f => f.isCurrent = false)
-    this._pendingRelPath = currentRelPath
-    const item = this.rawFiles.value.find(f => f.rel_path === currentRelPath)
+    this._pendingRelPath = normalizedPath
+    const item = this.rawFiles.value.find(f => {
+      const fp = f.rel_path.replace(/\\/g, '/')
+      return fp === normalizedPath || fp.endsWith(normalizedPath) || normalizedPath.endsWith(fp)
+    })
     if (item) {
       item.markCurrent()
       item.markSynced()

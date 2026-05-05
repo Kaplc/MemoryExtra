@@ -1,29 +1,39 @@
 # 前端 - Settings 模块（设置）
 
 ## 模块概述
-全局设置页，三个Tab：模型（推理设备切换）、mem0.json（动态表单）、wiki.json（动态表单）。配置数据从后端schema动态生成表单。
+全局设置页，三个Tab：模型（推理设备切换）、mem0.json（动态表单）、wiki.json（动态表单）。采用 TabRegistry 动态注册机制，新 Tab 无需修改主文件，只需在 TabRegistry.ts 中 import。
 
 ## 文件位置
 ```
-web/modules/settings/
-├── settings.html   # HTML模板 + CSS（内联）
-└── settings.js     # 页面逻辑
+web/src/views/SettingsView/
+├── SettingsView.vue      # Vue组件，Tab 动态渲染
+├── index.ts              # SettingsViewModel 类，单例 settingsViewModel
+├── TabRegistry.ts        # 动态 Tab 注册表（import 即注册）
+├── ModelTab/
+│   ├── ModelTab.vue      # 模型Tab组件
+│   └── ModelTab.ts       # ModelTab 类（设备选择 + GPU检测）
+├── Mem0Tab/
+│   ├── Mem0Tab.vue       # mem0配置Tab组件
+│   └── Mem0Tab.ts        # Mem0Tab 类（动态表单渲染）
+└── WikiTab/
+    ├── WikiTab.vue       # wiki配置Tab组件
+    └── WikiTab.ts        # WikiTab 类（动态表单渲染）
 ```
 
 ## 界面布局
 ```
 ┌──────────────────────────────────────────┐
 │ 设置                                     │
-│ [模型] [mem0.json] [wiki.json]           │  ← Tab切换
+│ [模型] [mem0.json] [wiki.json]           │  ← 动态Tab导航
 ├──────────────────────────────────────────┤
 │ 模型Tab:                                 │
-│  模型: [BAAI/bge-m3 ▼]  bge-m3 · 1024维 │
+│  向量模型: BAAI/bge-m3 · 向量维度 1024    │
 │  推理设备: [自动 ▼]                       │
 │  ✅ 检测到 GPU: NVIDIA ...               │
 │  [重置] [保存]                           │
 ├──────────────────────────────────────────┤
 │ mem0.json Tab / wiki.json Tab:           │
-│  (动态表单，根据后端schema生成)            │
+│  (动态表单，根据后端 schema 生成)          │
 │  目录字段 → 带浏览按钮 + 存在性检查       │
 │  [恢复默认] [保存]                       │
 └──────────────────────────────────────────┘
@@ -31,117 +41,149 @@ web/modules/settings/
 
 ## 交互逻辑流
 
-### 页面加载
+### 页面加载（SettingsView.onMounted）
 ```
-onPageLoad()
-  └── loadSettingsPage()
-        ├── 并行请求: GET /settings, GET /status, GET /aibrain-config
-        ├── 更新模型Tab: 设备选择器、GPU检测信息
-        ├── renderDynamicForms(aibrain)  ← 根据schema动态渲染mem0/wiki表单
-        └── initDirChecks()             ← 给目录输入框绑定change/blur事件
-```
-
-### 模型Tab - 保存设备
-```
-选择设备(auto/gpu/cpu) → pendingDevice更新
-点击[保存] → applySettings()
-  → POST /reload-model { device: pendingDevice }
-  → 成功: toast提示，savedDevice同步
-  → 无变更: toast"设置未变更"
+onMounted()
+  → settingsViewModel.onMounted()
+  │     → loadAll() → _configStore.loadConfig()
+  │     → 遍历 tabList，调用 tabClass.loadFromConfig(cfg, st, aibrain)
+  → settingsViewModel.initDirChecks()
+  │     → 遍历 tabList，调用 tabClass.initDirChecks()
 ```
 
-### 动态表单Tab - 保存配置
+### 设备保存（ModelTab.apply）
 ```
-点击[保存] → saveMem0Config() / saveWikiConfig()
-  → 遍历 aibrainConfig 对应 fields，收集表单值
-  → 嵌套字段处理：如 key='llm_provider' → {"llm": {"provider": ...}}
-  → POST /save-aibrain-config { mem0: {...} } 或 { wiki: {...} }
+apply()
+  → 检查是否变更
+  → POST /settings/reload-model { device }
+  → 更新 _configStore.savedDevice
+  → Toast 提示"已保存并重载模型"
 ```
 
-### GPU 硬件检测特殊状态
+### 配置保存（Mem0Tab/WikiTab）
 ```
-cuda_available=false + gpu_hardware=true
-  → 显示警告提示：检测到 NVIDIA GPU，但安装的是 CPU 版 PyTorch
-  → 提供 pip 安装命令提示
+用户点击[保存]
+  → 收集表单值（嵌套字段处理，如 llm.provider → llm_provider）
+  → POST /settings/save-aibrain-config { mem0: {...} } 或 { wiki: {...} }
+  → Toast 提示成功/失败
 ```
 
 ### 目录浏览
 ```
 点击[📁] → browseDir(inputId)
-  → POST /select-directory (后端原生选择器)
-  → 失败降级: 创建webkitdirectory的input元素
+  → POST /settings/select-directory
   → 选择后自动调用 checkDirExists(inputId)
 ```
 
 ### 目录存在性检查
 ```
 输入框 change/blur → checkDirExists(inputId)
-  → POST /check-path { path }
-  → 存在: 显示 ✓ (绿色)
-  → 不存在: 显示 ✗ 不存在 (红色)
+  → POST /settings/check-path { path }
+  → 显示 ✓(绿色) 或 ✗(红色)
 ```
 
 ## 数据流
 
-### 配置加载
+### 配置加载（loadAll）
 ```
-GET /settings          → { device: "cpu" }
-GET /status            → { model_loaded, embedding_model, cuda_available, gpu_name, ... }
-GET /aibrain-config    → { mem0: { fields: [...] }, wiki: { fields: [...] } }
+GET /settings              → cfg: { device }
+GET /statusbar/api         → st: { model_loaded, embedding_model, embedding_dim, cuda_available, gpu_name, ... }
+GET /settings/aibrain-config → aibrain: { mem0: { fields: [...] }, wiki: { fields: [...] } }
 ```
 
-### 动态表单schema格式
+### 动态表单 schema 格式
 ```json
 {
   "mem0": {
     "fields": [
       { "key": "wiki_dir", "label": "Wiki目录", "type": "dir", "value": "wiki", "default": "wiki" },
-      { "key": "chunk_size", "label": "分块大小", "type": "number", "value": 1200, "default": 1200 },
-      { "key": "llm_provider", "label": "LLM Provider", "type": "text", "value": "", "default": "" }
+      { "key": "chunk_token_size", "label": "分块大小", "type": "number", "value": 1200, "default": 1200 }
     ]
   }
 }
 ```
 
+### 字段类型推断
+| 关键词 | 类型 |
+|--------|------|
+| `dir`/`path`/`folder`/`directory` | `dir`（带浏览按钮） |
+| `url`/`endpoint`/`api_key`/`key` | `text` |
+| `size`/`timeout`/`count`/`limit`（int） | `number` |
+| 其他 | `text` |
+
 ### 配置保存
 ```
-POST /save-aibrain-config { mem0: { wiki_dir: "...", chunk_size: 1200, llm: { provider: "..." } } }
-POST /reload-model { device: "gpu" }
-POST /select-directory  → { path: "C:\\..." }
-POST /check-path { path } → { exists: true }
+POST /settings/reload-model { device: "cuda" }
+POST /settings/save-aibrain-config { mem0: {...} } 或 { wiki: {...} }
+POST /settings/select-directory → { path: "C:\\..." }
+POST /settings/check-path { path } → { exists: true }
 ```
 
-### GPU 检测逻辑（根据 status 字段组合判断）
+## 核心类
+
+### SettingsViewModel（index.ts:13）
+| 属性 | 类型 | 说明 |
+|------|------|------|
+| `activeTab` | `Ref<string>` | 当前 Tab 名（默认 'model'） |
+| `tabList` | `TabDef[]` | 从 TabRegistry 动态获取 |
+
+| 方法 | 说明 |
+|------|------|
+| `switchTab(name)` | 切换活跃 Tab |
+| `loadAll()` | 加载所有配置，触发各 Tab 的 loadFromConfig |
+| `initDirChecks()` | 初始化目录检查 |
+| `inputType(type)` | 返回 input type 属性 |
+
+### ModelTab（ModelTab.ts:9）
+| 属性 | 类型 | 说明 |
+|------|------|------|
+| `desc` | `Ref<string>` | 模型描述文字 |
+| `gpuInfoHtml` | `Ref<string>` | GPU 检测信息（HTML） |
+| `gpuInfoClass` | `Ref<'ok'|'warn'|'err'>` | GPU 信息样式类 |
+| `saving` | `Ref<boolean>` | 保存中状态 |
+| `pendingDevice` | `Ref<string>` | 待保存的设备选择 |
+
+| 方法 | 说明 |
+|------|------|
+| `loadFromConfig(cfg, st, aibrain)` | 填充设备信息 + GPU 检测状态 |
+| `apply()` | 保存设备并重载模型 |
+| `reset()` | 重置为已保存的设备 |
+
+### GPU 检测逻辑（ModelTab.ts）
 | cuda_available | gpu_hardware | 显示 |
 |----------------|-------------|------|
-| true | - | 绿色提示，GPU 可用 |
-| false | true | 黄色警告，提示安装 GPU 版 PyTorch |
-| false | false | 红色提示，未检测到 GPU |
+| true | - | ✅ 检测到 GPU（绿色） |
+| false | true | ⚠️ 检测到 GPU 但安装的是 CPU 版 PyTorch（警告色） |
+| false | false | 未检测到 NVIDIA GPU（红色） |
 
-## 核心函数
-| 函数 | 说明 |
-|------|------|
-| `onPageLoad()` | 入口，调用 loadSettingsPage() |
-| `loadSettingsPage()` | 并行加载配置，渲染表单 |
-| `renderDynamicForms(config)` | 根据schema渲染mem0/wiki表单 |
-| `renderFields(fields, prefix)` | 生成表单HTML（目录字段带浏览按钮） |
-| `applySettings()` | 保存设备设置并重载模型 |
-| `saveMem0Config()` | 收集mem0表单值并保存（含嵌套字段处理） |
-| `saveWikiConfig()` | 收集wiki表单值并保存 |
-| `browseDir(inputId)` | 调用后端目录选择器，降级使用原生input |
-| `checkDirExists(inputId)` | POST /check-path 检查目录是否存在（change/blur触发） |
-| `initDirChecks()` | 渲染后给所有目录字段绑定change/blur事件 |
-| `switchTab(tab)` | 切换Tab |
-| `selectDevice(val)` | 更新 pendingDevice 并同步UI |
-| `resetSettings()` / `resetMem0Config()` / `resetWikiConfig()` | 恢复默认 |
+## Tab 注册机制（TabRegistry.ts）
 
-## 全局状态
-```javascript
-var pendingDevice = 'cpu';    // 待保存的设备选择
-var savedDevice = 'cpu';      // 已保存的设备
-var aibrainConfig = null;     // 动态配置schema数据
+### registerTab(def)
+```typescript
+// 存储到 window.__settingsTabRegistry__
+window.__settingsTabRegistry__.push(def)
 ```
 
----
+### 新增 Tab 步骤
+1. 在 `SettingsView/` 下创建新文件夹，如 `MyTab/`
+2. 放入 `MyTab.vue`（模板）和 `MyTab.ts`（逻辑类）
+3. 在 `TabRegistry.ts` 中添加一行 `import './MyTab/MyTab'`
 
-*最后更新: 2026-05-01*
+## 全局状态（settingsViewModel 单例）
+```typescript
+activeTab: string  // 'model' | 'mem0' | 'wiki'
+tabList: TabDef[]   // 动态从 TabRegistry 获取
+modelTab: ModelTab | undefined
+mem0Tab: Mem0Tab | undefined
+wikiTab: WikiTab | undefined
+```
+
+## 后端相关文件
+| 文件 | 作用 |
+|------|------|
+| `backend/routes/settings_routes.py` | 提供 `/settings/*` 端点 |
+| `backend/modules/Settings/settings_mod.py` | SettingsManager 单例 |
+| `backend/modules/brain/mem0_adapter.py` | mem0 配置管理 |
+
+---
+*最后更新: 2026-05-05*

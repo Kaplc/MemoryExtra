@@ -1,11 +1,11 @@
 # 后端 - Memory 模块
 
 ## 概述
-`memory.py` 提供记忆的 CRUD、搜索、整理 API。区分用户操作和 MCP 操作：用户操作不记录到记忆流，MCP 操作异步执行并记录状态。
+`memory_routes.py` 提供记忆的 CRUD、搜索、整理 API。区分用户操作和 MCP 操作：用户操作不记录到记忆流，MCP 操作异步执行并记录状态。
 
 ## 文件位置
 ```
-backend/modules/memory.py
+backend/routes/memory_routes.py
 ```
 
 ## API 接口
@@ -173,9 +173,9 @@ backend/modules/memory.py
 
 ## 相关模块
 - **brain/memory.py**：实际业务逻辑（store_memory, search_memory 等）
-- **brain/dedup.py**：去重分组（dedup_memories）
+- **brain/dedup.py**：去重分组（dedup_memories_iter）
 - **brain/llm.py**：LLM 精炼（refine_group）
 - **brain/organizer.py**：组织整理（organize_memories）
 
 ---
-*最后更新: 2026-05-04*
+*最后更新: 2026-05-05*

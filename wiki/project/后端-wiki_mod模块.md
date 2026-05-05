@@ -5,7 +5,7 @@
 
 ## 文件位置
 ```
-backend/modules/wiki_mod.py
+backend/modules/Wiki/wiki_mod.py
 ```
 
 ## 延迟导入机制
@@ -49,6 +49,7 @@ def _get_rag_engine():
     {
       "filename": "前端-overview模块.md",
       "abs_path": "E:\\Project\\AiBrain\\wiki\\project\\前端-overview模块.md",
+      "rel_path": "project/前端-overview模块.md",
       "size_bytes": 5120,
       "modified": 1746012345.123,
       "preview": "系统首页，展示模型...",
@@ -73,7 +74,7 @@ def _get_rag_engine():
 
 **响应**：
 ```json
-{ "status": "started", "started_at": 0.05 }
+{ "status": "started", "started_at": 0 }
 ```
 如索引已在运行，返回 409 状态码：`{ "error": "索引任务正在进行中" }`
 
@@ -102,7 +103,7 @@ def _get_rag_engine():
 
 **参数**：`?lines=200`（默认200，范围10-500）
 
-**过滤关键词**：`wiki`, `RAG`, `lightrag`, `index`, `search`, `embed`
+**过滤关键词**：`wiki`, `RAG`, `lightrag`, `index`, `search`, `embed`, `ERROR`, `WARNING`, `WARN`, `error`, `warning`, `warn`, `fail`, `failed`, `exception`
 
 **响应**：
 ```json
@@ -169,4 +170,4 @@ def _get_rag_engine():
 - **记忆流前端**：通过 Wiki MCP 工具调用 wiki_search/wiki_list
 
 ---
-*最后更新: 2026-05-01*
+*最后更新: 2026-05-05*

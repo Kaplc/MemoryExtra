@@ -1,16 +1,16 @@
 # 后端 - Stream 模块（记忆流）
 
 ## 概述
-`stream.py` 提供记忆流记录查询 API，从 stats_db 查询 MCP 调用和用户操作的历史记录。
+`stream_routes.py` 提供记忆流记录查询 API，从 stats_db 查询 MCP 调用和用户操作的历史记录。
 
 ## 文件位置
 ```
-backend/modules/stream.py
+backend/routes/stream_routes.py
 ```
 
 ## API 接口
 
-### GET `/stream`
+### GET `/stream/api`
 **查询参数**：
 | 参数 | 说明 |
 |------|------|
@@ -50,4 +50,4 @@ backend/modules/stream.py
 - **Memory MCP**：每次 store/search 调用自动记录
 
 ---
-*最后更新: 2026-05-01*
+*最后更新: 2026-05-05*

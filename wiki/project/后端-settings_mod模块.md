@@ -5,7 +5,7 @@
 
 ## 文件位置
 ```
-backend/modules/settings_mod.py
+backend/modules/Settings/settings_mod.py
 ```
 
 ## 配置文件
@@ -38,15 +38,15 @@ backend/modules/settings_mod.py
 
 ## API 接口
 
-### GET `/settings`
+### GET `/settings/api`
 **功能**：获取当前设备设置
 **响应**：`{ "device": "cuda" }`
 
-### POST `/settings`
+### POST `/settings/api`
 **功能**：保存设备设置
 **请求**：`{ "device": "gpu" }`
 
-### POST `/reload-model`
+### POST `/settings/reload-model`
 **功能**：重载 embedding 模型
 
 **请求**：`{ "device": "gpu" }`
@@ -54,7 +54,7 @@ backend/modules/settings_mod.py
 
 **实现**：后台线程执行 `model_mgr.load(device)`
 
-### GET `/aibrain-config`
+### GET `/settings/aibrain-config`
 **功能**：获取动态配置表单 schema
 
 **响应**：
@@ -79,7 +79,7 @@ backend/modules/settings_mod.py
 | `size`/`timeout`/`count`/`limit`（int） | `number` |
 | 其他 | `text` |
 
-### POST `/save-aibrain-config`
+### POST `/settings/save-aibrain-config`
 **功能**：保存 mem0 或 wiki 配置
 
 **请求**：
@@ -91,14 +91,14 @@ backend/modules/settings_mod.py
 ```
 **响应**：`{ "result": { "mem0": "已保存", "wiki": "已保存" } }`
 
-### GET `/config-info`
+### GET `/settings/config-info`
 **功能**：获取配置文件信息（路径、大小、内容）
 
-### POST `/check-path`
+### POST `/settings/check-path`
 **请求**：`{ "path": "C:\\path\\to\\dir" }`
 **响应**：`{ "exists": true }`
 
-### POST `/select-directory`
+### POST `/settings/select-directory`
 **功能**：通过 tkinter 原生对话框选择目录
 
 **响应**：`{ "path": "C:\\selected\\path" }`（用户取消时 path 为空字符串）
@@ -111,7 +111,7 @@ backend/modules/settings_mod.py
 
 ## 前端集成
 - **Settings 前端**：消费所有端点，动态渲染表单
-- **Overview 前端**：消费 `/reload-model`
+- **Overview 前端**：消费 `/settings/reload-model`
 
 ---
-*最后更新: 2026-05-01*
+*最后更新: 2026-05-05*
