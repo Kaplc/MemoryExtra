@@ -57,21 +57,6 @@ def register(app, ready_state, logger, stats_db):
         logger.debug(f"[API→] /wiki/index-progress: {progress}")
         return jsonify(progress)
 
-    @app.route('/wiki/index-log', methods=['GET'])
-    def wiki_index_log():
-        """获取 Wiki 索引日志"""
-        lines = request.args.get('lines', 20, type=int)
-        return jsonify(_wiki_mgr.get_wiki_index_log(lines=lines))
-
-    @app.route('/wiki/log', methods=['GET'])
-    def wiki_log():
-        """获取 Wiki 相关日志（过滤关键字）"""
-        lines = request.args.get('lines', 200, type=int)
-        lines = min(max(int(lines), 10), 500)
-        keywords = ['wiki', 'RAG', 'lightrag', 'index', 'search', 'embed', 'ERROR', 'WARNING', 'WARN', 'error', 'warning', 'warn', 'fail', 'failed', 'exception']
-        result = _wiki_mgr.get_wiki_filtered_log(project_root, keywords, lines)
-        return jsonify(result)
-
     @app.route('/wiki/settings', methods=['GET', 'POST'])
     def wiki_settings():
         """读写 Wiki 配置（Llm 模型、API 配置等）"""

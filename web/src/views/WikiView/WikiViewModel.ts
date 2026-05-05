@@ -25,9 +25,6 @@ export class WikiViewModel {
   readonly progressLabel = ref('准备中...')
   readonly progressPct = ref('0%')
   readonly progressPctNum = ref(0)
-  readonly logLines = ref<string[]>([])
-  readonly logWrapEl = ref<HTMLElement | null>(null)
-
   // Sorting
   readonly sortKey = ref<SortKey>('modified')
   readonly sortAsc = ref(false)
@@ -283,7 +280,6 @@ export class WikiViewModel {
         const pdata = await this._api.fetchJson<{ status: string; done: number; total: number; current_file: string }>('/wiki/index-progress')
         if (pdata.status === 'running') {
           this.applyProgress(pdata)
-          await this.refreshLog()
           if (pdata.done !== this._lastDone) {
             this._lastDone = pdata.done
             // 直接更新文件状态，不重新拉整个列表
@@ -296,8 +292,6 @@ export class WikiViewModel {
           this._lastDone = -1
           this.stopPoll()
           this.applyDone(pdata)
-          await nextTick()
-          this.scrollLogBottom()
         }
       } catch (e) {
         console.error('[WikiView] poll error:', e)
@@ -309,25 +303,6 @@ export class WikiViewModel {
     if (this._pollTimer !== null) {
       clearInterval(this._pollTimer)
       this._pollTimer = null
-    }
-  }
-
-  async refreshLog(): Promise<void> {
-    try {
-      const data = await this._api.fetchJson<{ lines: string[] }>('/wiki/index-log?lines=20')
-      if (data.lines) {
-        this.logLines.value = data.lines
-        await nextTick()
-        this.scrollLogBottom()
-      }
-    } catch {
-      // 日志获取失败不阻塞
-    }
-  }
-
-  scrollLogBottom(): void {
-    if (this.logWrapEl.value) {
-      this.logWrapEl.value.scrollTop = this.logWrapEl.value.scrollHeight
     }
   }
 

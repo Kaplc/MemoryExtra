@@ -79,7 +79,7 @@ export class LogsViewModel {
     this.logLines.value = []
 
     try {
-      const data = await this._api.fetchJson<LogData>('/wiki/log?lines=300', 5)
+      const data = await this._api.fetchJson<LogData>('/logs/api?lines=300&keywords=wiki,RAG,lightrag,index,search,embed,ERROR,WARNING,WARN,error,warning,warn,fail,failed,exception', 5)
       console.log('[logs] log data received:', data.lines ? data.lines.length + ' lines' : 'no lines')
 
       if (!data.lines) {

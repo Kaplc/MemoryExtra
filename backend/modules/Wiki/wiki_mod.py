@@ -4,8 +4,6 @@ import os
 import threading
 import time as _time
 import hashlib
-import io
-import sys
 import logging
 from datetime import datetime, timezone
 
@@ -22,17 +20,6 @@ _index_progress = {
     "status": "idle",
     "result": None,
 }
-
-_INDEX_LOG_BUFFER = []
-_INDEX_LOG_MAX = 20
-
-
-def _log_buffer_write(msg):
-    ts = datetime.now().strftime("%H:%M:%S")
-    line = f"[{ts}] {msg}"
-    _INDEX_LOG_BUFFER.append(line)
-    if len(_INDEX_LOG_BUFFER) > _INDEX_LOG_MAX:
-        del _INDEX_LOG_BUFFER[:len(_INDEX_LOG_BUFFER) - _INDEX_LOG_MAX]
 
 
 # ── WikiManager ──────────────────────────────────────────────────────────
@@ -165,20 +152,7 @@ class WikiManager:
         for i, (rel_path, abs_path, md5, action) in enumerate(to_process):
             self._set_progress(done, total, rel_path)
             try:
-                old_stdout = sys.stdout
-                captured = io.StringIO()
-                sys.stdout = captured
-                try:
-                    verified = self._index_file(abs_path, rel_path)
-                finally:
-                    sys.stdout = old_stdout
-                    output = captured.getvalue().strip()
-                    if output:
-                        for line in output.split('\n'):
-                            line = line.strip()
-                            if line:
-                                _log_buffer_write(line)
-
+                verified = self._index_file(abs_path, rel_path)
                 if verified:
                     indexed_files[rel_path] = {
                         "md5": md5,
@@ -217,13 +191,6 @@ class WikiManager:
     def get_index_progress(self):
         return _index_progress
 
-    def get_index_log(self, lines=50):
-        tail = _INDEX_LOG_BUFFER[-lines:] if len(_INDEX_LOG_BUFFER) > lines else list(_INDEX_LOG_BUFFER)
-        return {"lines": tail, "total": len(_INDEX_LOG_BUFFER)}
-
-    def clear_index_log(self):
-        global _INDEX_LOG_BUFFER
-        _INDEX_LOG_BUFFER = []
 
     def _start_wiki_watcher(self):
         """启动 wiki 目录监听，文件变化时自动增量索引"""
@@ -363,17 +330,6 @@ class WikiManager:
         self._set_progress(0, 0, "", "running")
         threading.Thread(target=_run, daemon=True).start()
         return True, "已启动"
-
-    # ── 日志 ────────────────────────────────────────────────────────────
-    def get_wiki_filtered_log(self, project_root: str, keywords: list[str], lines: int = 200):
-        from modules.Log.log_mod import LogManager
-        _log_mgr = LogManager.get_instance()
-        _, fname = _log_mgr.get_latest_log_file(project_root)
-        if not fname:
-            return {"lines": [], "file": None}
-        result = _log_mgr.read_log_tail_filtered(os.path.join(project_root, 'logs', fname), keywords, lines)
-        result["file"] = fname
-        return result
 
     # ── 设置 ────────────────────────────────────────────────────────────
     _LLM_FLAT_MAP = {

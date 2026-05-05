@@ -484,26 +484,4 @@ onUnmounted(() => wikiViewModel.onUnmounted())
   0%   { background-position: 200% 0; }
   100% { background-position: -200% 0; }
 }
-
-.index-log-wrap {
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
-  background: #0f1117;
-  border: 1px solid #2d3149;
-  border-radius: 4px;
-  padding: 6px 8px;
-  font-family: monospace;
-  font-size: 10px;
-  color: #94a3b8;
-  line-height: 1.5;
-  word-break: break-all;
-}
-.index-log-wrap .log-line {
-  opacity: .7;
-}
-.index-log-wrap .log-line:last-child {
-  opacity: 1;
-  color: #e2e8f0;
-}
 </style>
