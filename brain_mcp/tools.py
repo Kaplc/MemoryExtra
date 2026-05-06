@@ -72,7 +72,7 @@ def search_memory(query: str, category: str) -> list[dict]:
 
     Args:
         query: 搜索关键词
-        category: 记忆分类，必填，"user"/"fact"/"exp"
+        category: 记忆分类，必填，"life"/"fact"/"exp"
     """
     result = _call("/memory/mcp/search", {"query": query, "category": category})
     if "error" in result:

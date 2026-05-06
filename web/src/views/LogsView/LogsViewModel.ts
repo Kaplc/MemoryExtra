@@ -1,6 +1,6 @@
 /* 日志视图模型 - 面向对象设计 */
 
-import { ref } from 'vue'
+import { ref, nextTick } from 'vue'
 import { useApi } from '@/composables/useApi'
 import { useToast } from '@/composables/useToast'
 
@@ -99,6 +99,7 @@ export class LogsViewModel {
       }
 
       this.logLines.value = data.lines.map((l) => this.parseLine(l))
+      nextTick(() => nextTick(() => this.scrollToBottom()))
       console.log('[logs] loadLog done, rendered content')
     } catch (e: any) {
       this.error.value = '日志加载失败: ' + (e.message || e)
@@ -130,9 +131,12 @@ export class LogsViewModel {
 
   // ── 滚动到底部 ───────────────────────────────────────────
   scrollToBottom(): void {
-    if (this.logWrapEl.value) {
-      this.logWrapEl.value.scrollTop = this.logWrapEl.value.scrollHeight
-    }
+    // scrollToBottom uses logWrapEl which is set via setLogWrap
+  }
+
+  setLogWrap(el: HTMLElement | null): void {
+    this.logWrapEl.value = el
+    console.log('[logs] setLogWrap:', el)
   }
 }
 

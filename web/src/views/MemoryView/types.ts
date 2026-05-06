@@ -1,10 +1,6 @@
 /* 共享类型定义 */
-export interface Memory {
-  id: string
-  text: string
-  timestamp: string
-  score?: number
-}
+import { Memory } from './Memory'
+export { Memory }
 
 export interface OrganizeGroup {
   group_id: number

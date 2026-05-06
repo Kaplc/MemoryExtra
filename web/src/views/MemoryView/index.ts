@@ -1,9 +1,9 @@
 /* 记忆视图模型 - 组合各 Tab 类 */
 
 import { ref } from 'vue'
-import { SearchTab } from './SearchTab'
-import { StoreTab } from './StoreTab'
-import { OrganizeTab } from './OrganizeTab'
+import { SearchTab } from './SearchTab/SearchTab'
+import { StoreTab } from './StoreTab/StoreTab'
+import { OrganizeTab } from './OrganizeTab/OrganizeTab'
 
 export class MemoryViewModel {
   readonly currentTab = ref<'search' | 'store' | 'organize'>('search')

@@ -1,11 +1,31 @@
 <script setup lang="ts">
-import { onMounted } from 'vue'
+import { onMounted, nextTick, ref, watch, watchEffect } from 'vue'
 import { logsViewModel } from './LogsViewModel'
 
+const logWrapRef = ref<HTMLElement | null>(null)
+
 onMounted(() => {
-  console.log('[logs] onPageLoad start')
+  console.log('[logs] onPageLoad start, logWrapRef:', logWrapRef.value)
+  logsViewModel.setLogWrap(logWrapRef.value)
   logsViewModel.loadLog()
   console.log('[logs] onPageLoad done')
+})
+
+// 监听日志行数变化，自动滚动到底部
+watchEffect(() => {
+  const len = logsViewModel.logLines.value.length
+  const el = logWrapRef.value
+  console.log('[logs] watchEffect: len=', len, 'el=', !!el)
+  if (len > 0 && el) {
+    // 需要等待 v-for 完全渲染 DOM，multiple nextTick
+    const tick = () => {
+      const el2 = logWrapRef.value
+      if (!el2) return
+      el2.scrollTop = el2.scrollHeight
+      console.log('[logs] scroll, scrollTop=', el2.scrollTop, 'scrollHeight=', el2.scrollHeight)
+    }
+    nextTick(() => nextTick(() => nextTick(tick)))
+  }
 })
 </script>
 
@@ -24,7 +44,7 @@ onMounted(() => {
           刷新
         </button>
       </div>
-      <div class="log-wrap" ref="logsViewModel.logWrapEl.value">
+      <div class="log-wrap" ref="logWrapRef">
         <div v-if="logsViewModel.loading.value" class="mini-loading"></div>
         <div v-else-if="logsViewModel.error.value" class="empty-state">{{ logsViewModel.error.value }}</div>
         <div v-else-if="logsViewModel.logLines.value.length === 0" class="empty-state">

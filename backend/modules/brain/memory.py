@@ -13,7 +13,7 @@ logger = logging.getLogger('memory')
 DEFAULT_USER_ID = "default"
 
 MEMORY_CATEGORY_MAP = {
-    "user": {"id_type": "user_id",  "id_value": DEFAULT_USER_ID, "metadata": {"category": "user"}},
+    "life": {"id_type": "user_id",  "id_value": DEFAULT_USER_ID, "metadata": {"category": "life"}},
     "fact": {"id_type": "agent_id", "id_value": "fact",          "metadata": {"category": "fact"}},
     "exp":  {"id_type": "run_id",   "id_value": "exp",           "metadata": {"category": "exp"}},
 }
@@ -81,8 +81,8 @@ def store_memory(text: str, memory_meta: dict = None, category: str = None) -> d
     Args:
         text: 要存储的记忆文本
         memory_meta: 可选元数据，如 {"source": "user"} 或 {"source": "mcp"}
-        category: 记忆分类，必填，"user"/"fact"/"exp"
-            - user:  用户历史、偏好、背景  → user_id=default
+        category: 记忆分类，必填，"life"/"fact"/"exp"
+            - life:  用户历史、偏好、背景  → user_id=default
             - fact:  规则、事实、知识      → agent_id=fact
             - exp:   技能、项目经历         → run_id=exp
 
@@ -91,9 +91,9 @@ def store_memory(text: str, memory_meta: dict = None, category: str = None) -> d
             {"result": "已记住: 新增 N 条记忆", "stored_texts": [...]}
     """
     if category is None:
-        raise ValueError("category 参数不能为空，请指定记忆分类：user / fact / exp")
+        raise ValueError("category 参数不能为空，请指定记忆分类：life / fact / exp")
     if category not in MEMORY_CATEGORY_MAP:
-        raise ValueError(f"无效的 category：{category}，可选：user / fact / exp")
+        raise ValueError(f"无效的 category：{category}，可选：life / fact / exp")
 
     client = get_mem0_client()
 
@@ -149,8 +149,8 @@ def search_memory(query: str, category: str = None) -> list[dict]:
 
     Args:
         query: 搜索关键词
-        category: 记忆分类，必填，"user"/"fact"/"exp"
-            - user:  用户历史、偏好、背景  → user_id=default
+        category: 记忆分类，必填，"life"/"fact"/"exp"
+            - life:  用户历史、偏好、背景  → user_id=default
             - fact:  规则、事实、知识      → agent_id=fact
             - exp:   技能、项目经历         → run_id=exp
 
@@ -158,9 +158,9 @@ def search_memory(query: str, category: str = None) -> list[dict]:
         list[dict]: [{id, text, score}, ...]
     """
     if category is None:
-        raise ValueError("category 参数不能为空，请指定记忆分类：user / fact / exp")
+        raise ValueError("category 参数不能为空，请指定记忆分类：life / fact / exp")
     if category not in MEMORY_CATEGORY_MAP:
-        raise ValueError(f"无效的 category：{category}，可选：user / fact / exp")
+        raise ValueError(f"无效的 category：{category}，可选：life / fact / exp")
 
     client = get_mem0_client()
     opts = _get_search_options()

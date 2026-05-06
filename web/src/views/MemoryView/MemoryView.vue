@@ -1,9 +1,9 @@
 <script setup lang="ts">
 import { onMounted, onUnmounted } from 'vue'
 import { memoryViewModel } from './index'
-import SearchPanel from './SearchPanel.vue'
-import StorePanel from './StorePanel.vue'
-import OrganizePanel from './OrganizePanel.vue'
+import SearchPanel from './SearchTab/SearchPanel.vue'
+import StorePanel from './StoreTab/StorePanel.vue'
+import OrganizePanel from './OrganizeTab/OrganizePanel.vue'
 
 onMounted(() => memoryViewModel.onMounted())
 onUnmounted(() => memoryViewModel.onUnmounted())

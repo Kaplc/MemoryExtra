@@ -20,21 +20,14 @@ export default defineConfig({
   retries: 0,
   reporter: 'list',
   use: {
-    baseURL: `http://127.0.0.1:5174`,
+    baseURL: `http://127.0.0.1:${port}`,
     trace: 'on-first-retry',
     screenshot: 'only-on-failure',
   },
   launchOptions: {
     args: ['--proxy-bypass-list=127.0.0.1;localhost', '--proxy-server=direct://'],
   },
-  webServer: {
-    command: 'npx serve dist -l 5174',
-    port: 5174,
-    reuseExistingServer: true,
-    timeout: 30000,
-    stdout: 'pipe',
-    stderr: 'pipe',
-  },
+  webServer: undefined as any,
   projects: [
     {
       name: 'chromium',

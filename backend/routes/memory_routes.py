@@ -13,6 +13,23 @@ from modules.brain.dedup import dedup_memories_iter, _dedup_pause_flag, _dedup_s
 logger = logging.getLogger('memory')
 
 
+def _search_all_categories(query: str) -> list[dict]:
+    """搜索所有分类的记忆，按 score 合并排序取前15条"""
+    all_results = []
+    seen_ids = set()
+    for cat in MEMORY_CATEGORY_MAP:
+        try:
+            results = search_memory(query, category=cat)
+            for r in results:
+                if r['id'] not in seen_ids:
+                    all_results.append({**r, 'category': cat})
+                    seen_ids.add(r['id'])
+        except Exception as e:
+            logger.warning(f"search category {cat} failed: {e}")
+    all_results.sort(key=lambda x: x['score'], reverse=True)
+    return all_results[:15]
+
+
 def register(app, ready_state, logger, stats_db):
     @app.route('/memory/store', methods=['POST'])
     def store():
@@ -35,13 +52,14 @@ def register(app, ready_state, logger, stats_db):
     def search():
         data = request.get_json()
         query = (data or {}).get('query', '').strip()
+        category = (data or {}).get('category', '').strip() or None
         ua = request.headers.get('User-Agent', '')
         is_mcp = 'python' in ua.lower() or 'urllib' in ua.lower()
-        logger.info(f"[TRACE] /memory/search called | query={query[:80]!r} | remote={request.remote_addr} | is_mcp={is_mcp}")
+        logger.info(f"[TRACE] /memory/search called | query={query[:80]!r} | category={category} | remote={request.remote_addr} | is_mcp={is_mcp}")
         if not query:
             return jsonify({"results": []})
         try:
-            results = search_memory(query)
+            results = search_memory(query, category=category) if category else _search_all_categories(query)
             if not is_mcp:
                 stats_db.add_search_history(query)
             return jsonify({"results": results})
