@@ -149,8 +149,8 @@ def search_memory(query: str) -> list[dict]:
     rerank = opts.get("rerank", False)
     MIN_COUNT = 15
 
-    # 搜索所有记忆，不限定 category
-    filters = {}
+    # 搜索所有记忆，限定 user_id 为 default
+    filters = {"user_id": DEFAULT_USER_ID}
 
     # 第一次请求：只拿高于阈值的
     kwargs = {
