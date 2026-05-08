@@ -104,15 +104,10 @@ def register(app, ready_state, logger, stats_db):
     def mcp_search():
         data = request.get_json()
         query = (data or {}).get('query', '').strip()
-        category = (data or {}).get('category', '').strip()
         if not query:
             return jsonify({"error": "搜索关键词不能为空"})
-        if not category:
-            return jsonify({"error": "category 参数不能为空，请指定记忆分类：user / fact / exp"})
-        if category not in MEMORY_CATEGORY_MAP:
-            return jsonify({"error": f"无效的 category：{category}，可选：user / fact / exp"})
         try:
-            results = search_memory(query, category=category)
+            results = _search_all_categories(query)
             stats_db.append_stream('search', content=query)
             return jsonify({"results": results})
         except Exception as e:
