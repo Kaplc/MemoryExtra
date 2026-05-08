@@ -69,11 +69,9 @@ def register(app, ready_state, logger, stats_db):
     def mcp_store():
         data = request.get_json()
         text = (data or {}).get('text', '').strip()
-        categories = (data or {}).get('categories')
+        categories = (data or {}).get('categories') or ['user']  # 默认用 user
         if not text:
             return jsonify({"error": "内容不能为空"})
-        if not categories:
-            return jsonify({"error": "categories 参数不能为空，请指定记忆分类：user / fact / exp"})
         rowid = stats_db.append_stream('store', content=text, status='pending')
 
         def _bg_store():
