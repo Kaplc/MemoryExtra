@@ -314,7 +314,7 @@ export class OverviewViewModel {
       yAxis: {
         type: 'value', position: 'right',
         splitLine: { lineStyle: { color: '#1a1d27' } },
-        axisLabel: { color: '#64748b', fontSize: 10 },
+        axisLabel: { color: '#64748b', fontSize: 10, formatter: (v: number) => Math.round(v).toString() },
         scale: true,
         splitNumber: 4,
       },
