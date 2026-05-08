@@ -5,8 +5,7 @@ from flask import request, jsonify, Response, stream_with_context
 from modules.brain.memory import (
     store_memory, search_memory, list_memories,
     delete_memory, update_memory, organize_memories,
-    dedup_memories, refine_memories, apply_organize,
-    MEMORY_CATEGORY_MAP
+    dedup_memories, refine_memories, apply_organize
 )
 from modules.brain.dedup import dedup_memories_iter, _dedup_pause_flag, _dedup_stop_flag
 
@@ -14,20 +13,13 @@ logger = logging.getLogger('memory')
 
 
 def _search_all_categories(query: str) -> list[dict]:
-    """搜索所有分类的记忆，按 score 合并排序取前15条"""
-    all_results = []
-    seen_ids = set()
-    for cat in MEMORY_CATEGORY_MAP:
-        try:
-            results = search_memory(query, category=cat)
-            for r in results:
-                if r['id'] not in seen_ids:
-                    all_results.append({**r, 'category': cat})
-                    seen_ids.add(r['id'])
-        except Exception as e:
-            logger.warning(f"search category {cat} failed: {e}")
-    all_results.sort(key=lambda x: x['score'], reverse=True)
-    return all_results[:15]
+    """搜索所有记忆，按 score 排序取前15条"""
+    try:
+        results = search_memory(query)
+        return sorted(results, key=lambda x: x['score'], reverse=True)[:15]
+    except Exception as e:
+        logger.warning(f"search failed: {e}")
+        return []
 
 
 def register(app, ready_state, logger, stats_db):

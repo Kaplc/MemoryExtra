@@ -75,37 +75,26 @@ def _get_search_options():
         return {"top_k": 50, "threshold": 0.55, "rerank": True}
 
 
-def store_memory(text: str, memory_meta: dict = None, category: str = None) -> dict:
+def store_memory(text: str, memory_meta: dict = None) -> dict:
     """存储记忆，LLM 自动从文本中拆分多条事实。
 
     Args:
         text: 要存储的记忆文本
         memory_meta: 可选元数据，如 {"source": "user"} 或 {"source": "mcp"}
-        category: 记忆分类，必填，"life"/"fact"/"exp"
-            - life:  用户历史、偏好、背景  → user_id=default
-            - fact:  规则、事实、知识      → agent_id=fact
-            - exp:   技能、项目经历         → run_id=exp
 
     Returns:
         dict: 包含 result 消息和实际存入的原始文本列表
             {"result": "已记住: 新增 N 条记忆", "stored_texts": [...]}
     """
-    if category is None:
-        raise ValueError("category 参数不能为空，请指定记忆分类：life / fact / exp")
-    if category not in MEMORY_CATEGORY_MAP:
-        raise ValueError(f"无效的 category：{category}，可选：life / fact / exp")
-
     client = get_mem0_client()
 
-    # 根据 category 映射到对应的 mem0 ID
-    mapping = MEMORY_CATEGORY_MAP[category]
     add_kwargs = {
-        mapping["id_type"]: mapping["id_value"],
+        "user_id": "default",
         "infer": True,
     }
 
-    # 合并 metadata：category 信息 + 调用方传入的额外元数据
-    metadata = dict(mapping["metadata"])
+    # 合并 metadata
+    metadata = {"category": "user"}
     if memory_meta:
         metadata.update(memory_meta)
     add_kwargs["metadata"] = metadata
@@ -144,24 +133,15 @@ def store_memory(text: str, memory_meta: dict = None, category: str = None) -> d
     return {"result": msg, "stored_texts": stored_texts}
 
 
-def search_memory(query: str, category: str = None) -> list[dict]:
+def search_memory(query: str) -> list[dict]:
     """搜索记忆，直接请求高于阈值的结果，不足 15 条时补足。
 
     Args:
         query: 搜索关键词
-        category: 记忆分类，必填，"life"/"fact"/"exp"
-            - life:  用户历史、偏好、背景  → user_id=default
-            - fact:  规则、事实、知识      → agent_id=fact
-            - exp:   技能、项目经历         → run_id=exp
 
     Returns:
         list[dict]: [{id, text, score}, ...]
     """
-    if category is None:
-        raise ValueError("category 参数不能为空，请指定记忆分类：life / fact / exp")
-    if category not in MEMORY_CATEGORY_MAP:
-        raise ValueError(f"无效的 category：{category}，可选：life / fact / exp")
-
     client = get_mem0_client()
     opts = _get_search_options()
 
@@ -169,9 +149,8 @@ def search_memory(query: str, category: str = None) -> list[dict]:
     rerank = opts.get("rerank", False)
     MIN_COUNT = 15
 
-    # 根据 category 映射到对应的 mem0 ID 构建过滤条件
-    mapping = MEMORY_CATEGORY_MAP[category]
-    filters = {mapping["id_type"]: mapping["id_value"]}
+    # 搜索所有记忆，不限定 category
+    filters = {}
 
     # 第一次请求：只拿高于阈值的
     kwargs = {
