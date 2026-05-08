@@ -69,27 +69,18 @@ def register(app, ready_state, logger, stats_db):
     def mcp_store():
         data = request.get_json()
         text = (data or {}).get('text', '').strip()
-        categories = (data or {}).get('categories') or ['user']  # 默认用 user
         if not text:
             return jsonify({"error": "内容不能为空"})
         rowid = stats_db.append_stream('store', content=text, status='pending')
 
         def _bg_store():
             try:
-                # 按每个 category 分别存储
-                stored_all = []
-                for cat in categories:
-                    cat = cat if cat in MEMORY_CATEGORY_MAP else "user"
-                    result = store_memory(
-                        text,
-                        memory_meta={"source": "mcp", "categories": categories},
-                        category=cat
-                    )
-                    stored_all.extend(result.get("stored_texts", []))
-                if stored_all:
-                    new_content = "\n".join(f"• {t}" for t in stored_all)
+                result = store_memory(text, memory_meta={"source": "mcp"})
+                stored = result.get("stored_texts", [])
+                if stored:
+                    new_content = "\n".join(f"• {t}" for t in stored)
                     stats_db.update_stream_content(rowid, new_content)
-                stats_db.record_action(added=len(stored_all))
+                stats_db.record_action(added=len(stored))
                 stats_db.update_stream_status(rowid, 'done')
             except Exception as e:
                 logger.error(f"[memory/mcp/store] 后台保存失败: {e}")
