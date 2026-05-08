@@ -1,4 +1,8 @@
-/* Wiki视图模型 - 面向对象设计 */
+/* Wiki视图模型 - 面向对象设计
+ *
+ * 作用：管理 Wiki 页面的文件列表、索引重建、设置保存等功能
+ * 实现：提供单例 wikiViewModel，支持文件排序、进度跟踪、设置管理等
+ */
 
 import { ref, nextTick } from 'vue'
 import { useWikiStore } from '@/stores/wiki'
@@ -25,6 +29,7 @@ export class WikiViewModel {
   readonly progressLabel = ref('准备中...')
   readonly progressPct = ref('0%')
   readonly progressPctNum = ref(0)
+
   // Sorting
   readonly sortKey = ref<SortKey>('modified')
   readonly sortAsc = ref(false)
@@ -52,6 +57,11 @@ export class WikiViewModel {
   private _pendingRelPath: string | null = null
 
   /* ==================== Computed ==================== */
+
+  /* sortedFiles：排序后的文件列表
+   * 流程：复制数组 → 根据 sortKey/sortAsc 排序 → 返回排序结果
+   * sortKey：filename（忽略大小写）/ sizeBytes / modified
+   */
   get sortedFiles(): WikiFileItem[] {
     const arr = this.rawFiles.value.slice()
     const key = this.sortKey.value
@@ -75,10 +85,14 @@ export class WikiViewModel {
     return arr
   }
 
+  /* totalSize：所有文件的总大小（字节） */
   get totalSize(): number {
     return this.rawFiles.value.reduce((s, f) => s + (f.size_bytes || 0), 0)
   }
 
+  /* indexStatusText：索引状态文本和颜色
+   * 未索引 → '未索引'（黄色），有文件out_of_sync → '需重建 X 个文件'（橙色），已同步 → '已同步'（绿色）
+   */
   get indexStatusText(): { text: string; color: string } {
     if (!this._store.indexed) return { text: '未索引', color: '#fde047' }
     const out = this.rawFiles.value.filter(f => f.index_status !== 'synced').length
@@ -86,12 +100,19 @@ export class WikiViewModel {
     return { text: '已同步', color: '#86efac' }
   }
 
+  /* sortArrow：获取排序方向箭头
+   * 当前列 → 返回 ▲(升序) 或 ▼(降序)，非当前列 → 返回空
+   */
   sortArrow(key: SortKey): string {
     if (this.sortKey.value !== key) return ''
     return this.sortAsc.value ? ' ▲' : ' ▼'
   }
 
   /* ==================== Formatting ==================== */
+
+  /* escHtml：HTML 特殊字符转义
+   * & → &amp;，< → &lt;，> → &gt;，" → &quot;
+   */
   escHtml(s: string): string {
     return String(s || '')
       .replace(/&/g, '&amp;')
@@ -100,12 +121,19 @@ export class WikiViewModel {
       .replace(/"/g, '&quot;')
   }
 
+  /* formatSize：字节大小格式化
+   * <1KB → B，<1MB → KB，否则 → MB
+   */
   formatSize(bytes: number): string {
     if (bytes < 1024) return bytes + ' B'
     if (bytes < 1048576) return (bytes / 1024).toFixed(1) + ' KB'
     return (bytes / 1048576).toFixed(1) + ' MB'
   }
 
+  /* formatDate：时间戳格式化
+   * 输入：Unix 时间戳（秒）
+   * 输出：'YYYY-MM-DD HH:mm'
+   */
   formatDate(ts: number): string {
     if (!ts) return '-'
     const d = new Date(ts * 1000)
@@ -115,6 +143,10 @@ export class WikiViewModel {
   }
 
   /* ==================== Data loading ==================== */
+
+  /* loadFiles：加载文件列表
+   * 流程：GET /wiki/list → 转换为 WikiFileItem 数组 → 更新 rawFiles 和 indexed 状态
+   */
   async loadFiles(skipRender = false): Promise<void> {
     this.loading.value = true
     this.loadError.value = false
@@ -131,7 +163,9 @@ export class WikiViewModel {
     }
   }
 
-  /** 根据 rel_path 找到对应文件项，标记为已同步 */
+  /* _markFileSynced：根据 rel_path 找到对应文件项，标记为已同步
+   * 用于：索引完成后批量更新文件状态
+   */
   private _markFileSynced(relPath: string): void {
     const item = this.rawFiles.value.find(f => f.rel_path === relPath)
     if (item) {
@@ -142,7 +176,9 @@ export class WikiViewModel {
     }
   }
 
-  /** 推进度时把当前文件从 out_of_sync/not_indexed 改成 synced */
+  /* _advanceProgress：推进度时把当前文件从 out_of_sync/not_indexed 改成 synced
+   * 流程：标准化路径分隔符（Windows \ → /）→ 清除所有 isCurrent → 找到匹配文件 → 标记 synced
+   */
   private _advanceProgress(done: number, total: number, currentRelPath: string): void {
     console.log(`[WikiView] _advanceProgress: done=${done}/${total} current=${currentRelPath}`)
     // 标准化路径分隔符（Windows \ → /）
@@ -162,6 +198,9 @@ export class WikiViewModel {
     }
   }
 
+  /* loadSettings：加载 Wiki 设置
+   * 流程：GET /wiki/settings → 更新表单各字段
+   */
   async loadSettings(): Promise<void> {
     try {
       const data = await this._api.fetchJson<any>('/wiki/settings')
@@ -177,6 +216,10 @@ export class WikiViewModel {
   }
 
   /* ==================== Sorting ==================== */
+
+  /* doSort：切换排序
+   * 流程：点击当前列 → 翻转升/降序；点击新列 → 切换到该列并升序
+   */
   doSort(key: SortKey): void {
     if (this.sortKey.value === key) {
       this.sortAsc.value = !this.sortAsc.value
@@ -187,6 +230,10 @@ export class WikiViewModel {
   }
 
   /* ==================== Tab switching ==================== */
+
+  /* switchTab：切换侧边栏 Tab
+   * 流程：切换到 settings → 加载设置；切换到 ops → 恢复索引进度；离开 ops → 停止轮询
+   */
   switchTab(tab: TabType): void {
     const prev = this.activeTab.value
     this.activeTab.value = tab
@@ -196,6 +243,10 @@ export class WikiViewModel {
   }
 
   /* ==================== Copy path ==================== */
+
+  /* copyPath：复制文件路径到剪贴板
+   * 流程：优先 Clipboard API → 降级为 textarea execCommand → 显示复制成功提示
+   */
   copyPath(path: string): void {
     if (navigator.clipboard && navigator.clipboard.writeText) {
       navigator.clipboard.writeText(path).then(() => {
@@ -214,12 +265,17 @@ export class WikiViewModel {
     }
   }
 
+  /* flashCopyToast：显示复制成功提示（1200ms 后自动隐藏） */
   flashCopyToast(): void {
     this.copyToastVisible.value = true
     setTimeout(() => { this.copyToastVisible.value = false }, 1200)
   }
 
   /* ==================== Index progress ==================== */
+
+  /* restoreIndexProgress：恢复索引进度（页面重新加载时调用）
+   * 流程：GET /wiki/index-progress → running → 应用进度并开始轮询；否则 → 应用完成状态
+   */
   async restoreIndexProgress(): Promise<void> {
     try {
       const pdata = await this._api.fetchJson<{ status: string; done: number; total: number; current_file: string }>('/wiki/index-progress')
@@ -234,6 +290,7 @@ export class WikiViewModel {
     }
   }
 
+  /* applyProgress：应用进度数据，更新进度条和当前文件显示 */
   applyProgress(pdata: { done: number; total: number; current_file: string }): void {
     this.showProgress.value = true
     const pct = pdata.total > 0 ? Math.round((pdata.done / pdata.total) * 100) : 0
@@ -243,6 +300,9 @@ export class WikiViewModel {
     this._lastDone = pdata.done
   }
 
+  /* applyDone：应用索引完成状态
+   * 流程：更新进度为 100% → 隐藏进度条 → 根据 status 显示结果消息
+   */
   applyDone(pdata: { status: string; done: number; total: number; result?: { added: string[]; updated: string[]; deleted: string[]; unchanged: number; errors: string[] } }): void {
     if (pdata.total > 0) {
       const pct = Math.round((pdata.done / pdata.total) * 100)
@@ -272,6 +332,9 @@ export class WikiViewModel {
     }
   }
 
+  /* startPoll：开始轮询索引进度
+   * 流程：每 200ms 查询 /wiki/index-progress → running → 更新进度；done/error → 停止轮询
+   */
   startPoll(): void {
     if (this._pollTimer !== null) return
     console.log('[WikiView] startPoll: 开始轮询进度')
@@ -299,6 +362,7 @@ export class WikiViewModel {
     }, 200)
   }
 
+  /* stopPoll：停止轮询 */
   stopPoll(): void {
     if (this._pollTimer !== null) {
       clearInterval(this._pollTimer)
@@ -307,6 +371,10 @@ export class WikiViewModel {
   }
 
   /* ==================== Rebuild index ==================== */
+
+  /* rebuildIndex：触发全文索引重建
+   * 流程：重置进度状态 → POST /wiki/index → 启动轮询跟踪进度
+   */
   async rebuildIndex(): Promise<void> {
     console.log('[WikiView] rebuildIndex: 开始')
     this.indexResultMsg.value = null
@@ -334,6 +402,10 @@ export class WikiViewModel {
   }
 
   /* ==================== Save settings ==================== */
+
+  /* saveSettings：保存 Wiki 设置
+   * 流程：构建 payload → POST /wiki/settings → 成功则重新加载文件列表
+   */
   async saveSettings(): Promise<void> {
     this.saving.value = true
     const payload = {
@@ -359,6 +431,10 @@ export class WikiViewModel {
   }
 
   /* ==================== Lifecycle ==================== */
+
+  /* onMounted：组件挂载时初始化
+   * 流程：加载设置 → 加载文件列表 → 恢复索引进度
+   */
   async onMounted(): Promise<void> {
     console.log('[WikiView] mounted')
     await this.loadSettings()
@@ -366,6 +442,9 @@ export class WikiViewModel {
     this.restoreIndexProgress()
   }
 
+  /* onUnmounted：组件卸载时清理
+   * 流程：停止轮询，防止内存泄漏
+   */
   onUnmounted(): void {
     this.stopPoll()
   }

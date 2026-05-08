@@ -1,4 +1,9 @@
-/* Wiki tab - Wiki 配置 */
+/* Wiki tab - Wiki 配置
+ *
+ * 作用：管理 wiki.json 配置文件（Wiki 目录、分词设置等）
+ * 实现：动态表单生成、目录校验、保存/重置功能
+ */
+
 import { reactive } from 'vue'
 import { useApi } from '@/composables/useApi'
 import { useToast } from '@/composables/useToast'
@@ -15,6 +20,9 @@ export class WikiTab {
   private _api = useApi()
   private _toast = useToast()
 
+  /* buildForm：根据字段定义构建表单
+   * 流程：清空表单 → 遍历 fields → 初始化 values 和 defaults
+   */
   buildForm(fields?: ConfigField[]): void {
     this.form.fields = fields ?? []
     this.form.values = {}
@@ -25,6 +33,7 @@ export class WikiTab {
     }
   }
 
+  /* collectData：收集表单数据为 API 所需格式 */
   collectData(): Record<string, any> {
     const data: Record<string, any> = {}
     for (const f of this.form.fields) {
@@ -35,6 +44,9 @@ export class WikiTab {
     return data
   }
 
+  /* save：保存 Wiki 配置
+   * 流程：POST /settings/save-aibrain-config { wiki: collectData() }
+   */
   async save(): Promise<void> {
     if (!this.form.fields.length) return
     try {
@@ -49,6 +61,7 @@ export class WikiTab {
     }
   }
 
+  /* reset：恢复字段默认值 */
   reset(): void {
     for (const f of this.form.fields) {
       this.form.values[f.key] = String(f.default ?? '')
@@ -56,6 +69,7 @@ export class WikiTab {
     this._toast.show('已恢复默认', 'info')
   }
 
+  /* browseDir：选择目录（优先后端接口，降级为原生 input） */
   async browseDir(key: string): Promise<void> {
     try {
       const data = await this._api.postJson<{ path?: string }>('/settings/select-directory', {})
@@ -77,6 +91,9 @@ export class WikiTab {
     }
   }
 
+  /* checkDir：校验目录是否存在
+   * 流程：POST /settings/check-path → 更新 dirChecks 状态
+   */
   async checkDir(inputId: string, path?: string): Promise<void> {
     if (!path) {
       path = (this.form.values[inputId.replace('wiki_', '')] ?? '').trim()
@@ -93,6 +110,7 @@ export class WikiTab {
     }
   }
 
+  /* loadFromConfig：从配置中加载表单字段定义 */
   async loadFromConfig(cfg: any, st: any, aibrain: any): Promise<void> {
     const section = aibrain?.wiki
     if (section?.fields) {
@@ -100,6 +118,7 @@ export class WikiTab {
     }
   }
 
+  /* initDirChecks：初始化所有目录类型字段的校验状态 */
   initDirChecks(): void {
     for (const f of this.form.fields) {
       if (f.type !== 'dir') continue
@@ -109,6 +128,7 @@ export class WikiTab {
     }
   }
 
+  /* onInput：输入时触发目录校验 */
   onInput(key: string): void {
     this.checkDir(`wiki_${key}`, this.form.values[key])
   }

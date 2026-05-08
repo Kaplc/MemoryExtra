@@ -1,4 +1,8 @@
-/* 共享类型定义 */
+/* 共享类型定义 - MemoryView 数据结构
+ *
+ * 作用：定义 MemoryView 中使用的共享类型和 OrganizeGroupItem 类
+ * 包含：OrganizeGroup 接口、RefinedItem 接口、OrganizeGroupItem 类
+ */
 import { Memory } from './Memory'
 export { Memory }
 
@@ -16,14 +20,21 @@ export interface RefinedItem {
   refined: boolean
 }
 
-/** 整理组列表项 - 每个组对应一个独立的对象实例 */
+/* OrganizeGroupItem：整理组列表项 - 每个组对应一个独立的对象实例
+ *
+ * 作用：管理一组相似记忆的精炼和合并状态
+ * 状态机：isRefined(是否已精炼) → isApplied(是否已应用合并) → isApplying(合并请求中)
+ */
 export class OrganizeGroupItem {
+  // ── 基础属性 ─────────────────────────────────────────────
   /** 组 ID（列表顺序，唯一） */
   readonly groupId: number
   /** 相似度 */
   similarity: number
   /** 原始记忆列表 */
   memories: Memory[]
+
+  // ── 状态标记 ─────────────────────────────────────────────
   /** 是否正在精炼 */
   isRefining = false
   /** 是否已精炼 */
@@ -32,6 +43,8 @@ export class OrganizeGroupItem {
   isApplied = false
   /** 是否正在写入（确认合并请求中） */
   isApplying = false
+
+  // ── 精炼结果 ─────────────────────────────────────────────
   /** 精炼后的文本（可编辑） */
   refinedText = ''
   /** 分类 */
@@ -45,7 +58,10 @@ export class OrganizeGroupItem {
     this.memories = memories
   }
 
-  /** 触发精炼（异步，结果写入 refinedText） */
+  /* refine：触发精炼（异步，结果写入 refinedText）
+   * 流程：校验状态 → POST /memory/organize/refine → 解析返回的 refined_text 和 category → 更新状态
+   * 错误处理：失败时写入 refineError，isRefining 复位
+   */
   async refine(api: { postJson: Function }): Promise<void> {
     if (this.isRefining || this.isApplied) return
     this.isRefining = true
@@ -70,7 +86,7 @@ export class OrganizeGroupItem {
     }
   }
 
-  /** 转为传给 API 的 group 对象格式 */
+  /* toGroupObj：转为传给 API 的 group 对象格式 */
   toGroupObj(): OrganizeGroup {
     return {
       group_id: this.groupId,
@@ -79,12 +95,16 @@ export class OrganizeGroupItem {
     }
   }
 
-  /** 原始内容（多行文本） */
+  /* originalText：原始内容（多行文本）
+   * 格式：[1] 记忆内容1\n[2] 记忆内容2
+   */
   originalText(): string {
     return this.memories.map((m, i) => `[${i + 1}] ${m.text}`).join('\n')
   }
 
-  /** 当前内容（精炼后优先，否则原始拼接） */
+  /* currentText：当前内容（精炼后优先，否则原始拼接）
+   * 优先级：refinedText → originalText()
+   */
   currentText(): string {
     return this.refinedText || this.originalText()
   }

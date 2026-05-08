@@ -1,3 +1,8 @@
+/* 侧边栏设置区 - Composable
+ *
+ * 作用：封装 WikiViewModel 的设置表单相关功能
+ */
+
 import { wikiViewModel } from '../WikiViewModel'
 
 export function useSideSettings() {

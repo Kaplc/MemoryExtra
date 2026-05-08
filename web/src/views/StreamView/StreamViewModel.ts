@@ -1,4 +1,8 @@
-/* 记忆流视图模型 - 面向对象设计 */
+/* 记忆流视图模型 - 面向对象设计
+ *
+ * 作用：显示记忆的实时存入/搜索/删除操作流
+ * 实现：双列表分别展示 store 和 search 操作，定时轮询更新状态
+ */
 
 import { ref, computed } from 'vue'
 import { useApi } from '@/composables/useApi'
@@ -41,28 +45,43 @@ export class StreamViewModel {
   private _streamPoll = usePolling(() => this.loadStream(), 2000)
 
   /* ==================== Helpers ==================== */
+
+  /* getActionLabel：获取操作类型的中文标签
+   * store → '存入'，search → '搜索'，其他 → '删除'
+   */
   getActionLabel(action: string): string {
     if (action === 'store') return '存入'
     if (action === 'search') return '搜索'
     return '删除'
   }
 
+  /* formatTime：提取时间戳中的时分秒部分
+   * 示例：'2024-05-07T14:30:00' → '14:30:00'
+   */
   formatTime(createdAt: string): string {
     return (createdAt || '').slice(11, 19)
   }
 
+  /* getItemText：获取记忆项的显示文本
+   * 优先 content，fallback 到 memory_id
+   */
   getItemText(item: StreamItem): string {
     return item.content || item.memory_id || ''
   }
 
+  /* isNew：判断是否为新出现的项（未在 knownIds 中） */
   isNew(id: number): boolean {
     return !this.knownIds.value.has(String(id))
   }
 
+  /* markKnown：将项 ID 记录到 knownIds 集合 */
   markKnown(items: StreamItem[]): void {
     items.forEach(item => this.knownIds.value.add(String(item.id)))
   }
 
+  /* getStatusIcon：获取状态图标标识
+   * pending → 'pending'，done → 'done'，error → 'error'，其他 → ''
+   */
   getStatusIcon(status: string): 'pending' | 'done' | 'error' | '' {
     if (status === 'pending') return 'pending'
     if (status === 'done') return 'done'
@@ -71,6 +90,11 @@ export class StreamViewModel {
   }
 
   /* ==================== Load stream ==================== */
+
+  /* loadStream：加载存入和搜索操作流
+   * 流程：并行 GET /stream/api?action=store&days=3 和 /stream/api?action=search&days=3
+   * → 更新 storeItems/searchItems → 标记已知 ID
+   */
   async loadStream(): Promise<void> {
     try {
       const [storeRes, searchRes] = await Promise.all([
@@ -93,6 +117,11 @@ export class StreamViewModel {
   }
 
   /* ==================== Status poll ==================== */
+
+  /* pollStatus：轮询更新操作状态
+   * 流程：检查是否有 pending 状态的项 → 并行获取最新数据 → 只更新状态变化的项
+   * 优化：仅当状态真正变化时触发响应式更新
+   */
   async pollStatus(): Promise<void> {
     const allCurrent = [...this.storeItems.value, ...this.searchItems.value]
     const hasPending = allCurrent.some(i => i.status === 'pending')
@@ -133,6 +162,8 @@ export class StreamViewModel {
   }
 
   /* ==================== Lifecycle ==================== */
+
+  /* onMounted：组件挂载时启动轮询 */
   onMounted(): void {
     console.log('[SteamView] mounted')
     this.loadStream()
@@ -140,6 +171,7 @@ export class StreamViewModel {
     this._statusPoll.start()
   }
 
+  /* onUnmounted：组件卸载时停止轮询 */
   onUnmounted(): void {
     this._streamPoll.stop()
     this._statusPoll.stop()

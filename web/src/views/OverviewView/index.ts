@@ -1,4 +1,8 @@
-/* 总览视图模型 - 组合各卡片类 */
+/* 总览视图模型 - 组合各卡片类
+ *
+ * 作用：作为 OverviewView 的顶层 ViewModel，管理所有卡片、数据图表和统计数字
+ * 实现：提供卡片列表、数据获取、图表绑制、数字动画等功能
+ */
 
 import { ref } from 'vue'
 import { useEcharts } from '@/composables/useEcharts'
@@ -235,6 +239,10 @@ export class OverviewViewModel {
   private _addedChart = useEcharts(this.addedChartRef)
   private _animTimers: Record<string, number> = {}
 
+  /* formatUptime：格式化运行时间
+   * 流程：秒 → 天/小时/分钟 字符串
+   * 示例：90秒 → '1分30秒'，3665秒 → '1时0分'，90000秒 → '1天1时'
+   */
   formatUptime(seconds: number): string {
     const d = Math.floor(seconds / 86400)
     const h = Math.floor((seconds % 86400) / 3600)
@@ -244,6 +252,10 @@ export class OverviewViewModel {
     return `${m}分`
   }
 
+  /* animateCount：DOM 元素数字动画
+   * 流程：requestAnimationFrame 循环 → 缓动函数过渡 → 更新 el.textContent
+   * 参数：el - 目标元素，target - 目标数值，key - 动画标识（用于取消）
+   */
   animateCount(el: HTMLElement | null, target: number, key: string): void {
     if (!el) return
     if (this._animTimers[key]) cancelAnimationFrame(this._animTimers[key])
@@ -265,6 +277,10 @@ export class OverviewViewModel {
     this._animTimers[key] = requestAnimationFrame(step)
   }
 
+  /* _getLabelStrategy：计算图表 X 轴标签策略
+   * 流程：判断数据是按小时还是按天 → 返回合适的间隔和格式化函数
+   * 按小时：每 3 小时显示一个标签；按天：均分标签避免拥挤
+   */
   private _getLabelStrategy(data: any[]): { interval: number; formatter: (v: string) => string } {
     if (!data?.length) return { interval: 0, formatter: (v: string) => v }
     const first = data[0]?.date || ''
@@ -279,6 +295,10 @@ export class OverviewViewModel {
     return { interval: dayInterval, formatter: (v: string) => v.slice(5) }
   }
 
+  /* _buildChartOption：构建 ECharts 配置
+   * 流程：应用标签策略 → 配置 grid/xAxis/yAxis/series/tooltip
+   * 参数：data - 原始数据，yData - 图表数据，color - 主题色，bottomPx - 底部留白
+   */
   private _buildChartOption(data: any[], yData: number[], color: string, bottomPx: number) {
     const { interval, formatter } = this._getLabelStrategy(data)
     return {
@@ -309,6 +329,9 @@ export class OverviewViewModel {
     }
   }
 
+  /* drawCumulativeChart：绘制累计数据图表
+   * 流程：提取 total 数据 → _buildChartOption 构建配置 → setOption 渲染
+   */
   drawCumulativeChart(data: any[]): void {
     if (!data?.length) { this._cumulativeChart.clear(); return }
     const totalData = data.map(d => d.total || 0)
@@ -316,6 +339,9 @@ export class OverviewViewModel {
     this._cumulativeChart.setOption(opt)
   }
 
+  /* drawAddedChart：绘制新增数据图表
+   * 流程：提取 added 数据 → _buildChartOption 构建配置 → setOption 渲染
+   */
   drawAddedChart(data: any[]): void {
     if (!data?.length) { this._addedChart.clear(); return }
     const addedData = data.map(d => d.added || 0)
@@ -323,6 +349,9 @@ export class OverviewViewModel {
     this._addedChart.setOption(opt)
   }
 
+  /* fetchAndDrawChart：获取并绘制图表数据
+   * 流程：GET /chart-data?range=xxx → 计算区间新增 → 更新统计数字 → 绘制图表
+   */
   async fetchAndDrawChart(range: string): Promise<void> {
     const { useApi } = await import('@/composables/useApi')
     const api = useApi()
@@ -341,6 +370,9 @@ export class OverviewViewModel {
     } catch (e) { console.error('[overview] chart error:', e) }
   }
 
+  /* fetchAddedChart：获取并绘制新增数据图表
+   * 流程：GET /chart-data → 累加总数 → 更新统计 → 绘制图表
+   */
   async fetchAddedChart(): Promise<void> {
     const { useApi } = await import('@/composables/useApi')
     const api = useApi()
@@ -357,6 +389,9 @@ export class OverviewViewModel {
     } catch (e) { console.error('[overview] added chart error:', e) }
   }
 
+  /* fetchMemoryCount：获取记忆总数并动画显示
+   * 流程：GET /memory/count → animateCount 过渡到目标数字
+   */
   async fetchMemoryCount(): Promise<void> {
     const { useApi } = await import('@/composables/useApi')
     const api = useApi()
@@ -367,6 +402,9 @@ export class OverviewViewModel {
     } catch (e) { console.error('[overview] memory count error:', e) }
   }
 
+  /* setChartRange：切换图表时间范围
+   * 流程：更新 currentChartRange → 根据当前视图类型重新获取数据
+   */
   setChartRange(range: 'today' | 'week' | 'month' | 'all'): void {
     if (range === this.currentChartRange.value) return
     this.currentChartRange.value = range
@@ -374,6 +412,9 @@ export class OverviewViewModel {
     else this.fetchAndDrawChart(range)
   }
 
+  /* setDataView：切换数据视图（累计/新增）
+   * 流程：更新 currentDataView → 根据新视图获取数据
+   */
   setDataView(view: 'cumulative' | 'added'): void {
     if (view === this.currentDataView.value) return
     this.currentDataView.value = view
@@ -381,6 +422,9 @@ export class OverviewViewModel {
     else this.fetchAndDrawChart(this.currentChartRange.value)
   }
 
+  /* onMounted：组件挂载时的初始化
+   * 流程：启动所有卡片轮询 → 延迟获取图表数据 → 获取记忆总数
+   */
   onMounted(): void {
     this.modelCard.start()
     this.qdrantCard.start()
@@ -390,6 +434,9 @@ export class OverviewViewModel {
     setTimeout(() => this.fetchMemoryCount(), 0)
   }
 
+  /* onUnmounted：组件卸载时清理
+   * 流程：取消所有动画帧 → 清理 Flask 定时器 → 停止所有卡片轮询
+   */
   onUnmounted(): void {
     Object.keys(this._animTimers).forEach(k => { cancelAnimationFrame(this._animTimers[k]) })
     this.flaskCard.cleanup()
@@ -399,6 +446,7 @@ export class OverviewViewModel {
     this.deviceCard.stop()
   }
 
+  /* redrawCharts：重新绘制图表（窗口 resize 时调用） */
   redrawCharts(): void {
     this.fetchAndDrawChart(this.currentChartRange.value)
     this.fetchMemoryCount()

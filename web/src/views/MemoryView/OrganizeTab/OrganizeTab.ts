@@ -1,4 +1,9 @@
-/* 合并记忆 Tab - 流式分析 */
+/* 合并记忆 Tab - 流式分析
+ *
+ * 作用：对记忆库中相似的记忆进行分组、合并、去重
+ * 实现：POST /memory/organize/dedup/stream 接收 SSE 流式数据，逐批更新分组列表，支持精炼和应用合并
+ */
+
 import { ref } from 'vue'
 import { useApi } from '@/composables/useApi'
 import { useToast } from '@/composables/useToast'
@@ -15,10 +20,16 @@ export class OrganizeTab {
   private _toast = useToast()
   private _abortController: AbortController | null = null
 
+  /* unrefinedCount：未精炼且未应用的组数量（用于显示待处理数） */
   get unrefinedCount(): number {
     return this.groups.value.filter(g => !g.isRefined && !g.isApplied).length
   }
 
+  /* start：启动流式去重分析
+   * 流程：重置状态 → POST /memory/organize/dedup/stream → 解析 SSE 数据流
+   * 数据格式：data: {type: "batch", groups: [...]} 批量分组，data: {type: "done", groups: [...]} 完成
+   * 错误处理：AbortError 表示主动停止，非 AbortError 显示错误提示
+   */
   async start(): Promise<void> {
     if (this.busy.value) return
     this.busy.value = true
@@ -90,6 +101,9 @@ export class OrganizeTab {
     }
   }
 
+  /* refineGroup：对指定组进行精炼（AI 合并文本）
+   * 流程：重置精炼状态 → 调用 OrganizeGroupItem.refine() → 显示完成提示
+   */
   async refineGroup(groupId: number): Promise<void> {
     const g = this.groups.value.find(x => x.groupId === groupId)
     if (!g || g.isApplied) return
@@ -104,6 +118,9 @@ export class OrganizeTab {
     }
   }
 
+  /* applySingle：应用合并（删除原记忆，写入合并后新记忆）
+   * 流程：校验合并文本非空 → POST /memory/organize/apply → 标记已应用 → 更新统计
+   */
   async applySingle(groupId: number): Promise<void> {
     const g = this.groups.value.find(x => x.groupId === groupId)
     if (!g || g.isApplied || g.isApplying) return
