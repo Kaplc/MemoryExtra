@@ -52,14 +52,13 @@ def register(app, ready_state, logger, stats_db):
     def search():
         data = request.get_json()
         query = (data or {}).get('query', '').strip()
-        category = (data or {}).get('category', '').strip() or None
         ua = request.headers.get('User-Agent', '')
         is_mcp = 'python' in ua.lower() or 'urllib' in ua.lower()
-        logger.info(f"[TRACE] /memory/search called | query={query[:80]!r} | category={category} | remote={request.remote_addr} | is_mcp={is_mcp}")
+        logger.info(f"[TRACE] /memory/search called | query={query[:80]!r} | remote={request.remote_addr} | is_mcp={is_mcp}")
         if not query:
             return jsonify({"results": []})
         try:
-            results = search_memory(query, category=category) if category else _search_all_categories(query)
+            results = _search_all_categories(query)
             if not is_mcp:
                 stats_db.add_search_history(query)
             return jsonify({"results": results})

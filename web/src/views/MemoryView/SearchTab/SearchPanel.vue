@@ -42,7 +42,6 @@ const vm = memoryViewModel
               <div class="memory-content">
                 <div class="memory-text">{{ m.text }}</div>
                 <div class="memory-meta">
-                  <span v-if="m.category" class="memory-cat">{{ m.categoryLabel }}</span>
                   <span class="memory-time">{{ m.formattedTime }}</span>
                   <span v-if="m.score !== undefined" class="memory-score">相似度 {{ m.scorePercent }}</span>
                   <span class="memory-id">{{ m.shortId }}...</span>
