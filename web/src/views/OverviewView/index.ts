@@ -471,7 +471,10 @@ export class OverviewViewModel {
     this.qdrantCard.start()
     this.flaskCard.start()
     this.deviceCard.start()
-    setTimeout(() => this.fetchAndDrawChart(this.currentChartRange.value), 0)
+    setTimeout(() => {
+      if (this.currentDataView.value === 'added') this.fetchAddedChart()
+      else this.fetchAndDrawChart(this.currentChartRange.value)
+    }, 0)
     setTimeout(() => this.fetchMemoryCount(), 0)
   }
 
@@ -487,9 +490,10 @@ export class OverviewViewModel {
     this.deviceCard.stop()
   }
 
-  /* redrawCharts：重新绘制图表（窗口 resize 时调用） */
+  /* redrawCharts：重新绘制当前活跃的图表（页面切回/窗口 resize 时调用） */
   redrawCharts(): void {
-    this.fetchAndDrawChart(this.currentChartRange.value)
+    if (this.currentDataView.value === 'added') this.fetchAddedChart()
+    else this.fetchAndDrawChart(this.currentChartRange.value)
     this.fetchMemoryCount()
   }
 }
