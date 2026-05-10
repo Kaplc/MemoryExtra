@@ -284,14 +284,17 @@ export class OverviewViewModel {
   private _getLabelStrategy(data: any[]): { interval: number; formatter: (v: string) => string } {
     if (!data?.length) return { interval: 0, formatter: (v: string) => v }
     const first = data[0]?.date || ''
+    const last = data[data.length - 1]?.date || ''
     const isHourly = first.includes(':')
     const len = data.length
+    console.log('[adaptive] _getLabelStrategy:', { len, first, last, isHourly })
     if (isHourly) {
-      // 24小时：每小时一个点，间隔2显示每3小时 (06:00, 09:00, 12:00...)
-      return { interval: len > 12 ? 2 : 0, formatter: (v: string) => v }
+      const interval = len > 12 ? 2 : 0
+      console.log('[adaptive] hourly strategy:', { interval })
+      return { interval, formatter: (v: string) => v }
     }
-    // 7天/30天：按天显示，间隔取整避免太密
     const dayInterval = Math.max(0, Math.floor(len / 8) - 1)
+    console.log('[adaptive] daily strategy:', { dayInterval, formula: `Math.floor(${len}/8)-1=${Math.floor(len / 8) - 1}` })
     return { interval: dayInterval, formatter: (v: string) => v.slice(5) }
   }
 
@@ -299,9 +302,32 @@ export class OverviewViewModel {
    * 流程：应用标签策略 → 配置 grid/xAxis/yAxis/series/tooltip
    * 参数：data - 原始数据，yData - 图表数据，color - 主题色，bottomPx - 底部留白
    */
+  /* _niceStep：计算 Y 轴的"漂亮"步长，确保刻度 ≤ maxTicks
+   * 使用 1-2-5 序列生成整齐的间隔，避免 ECharts 忽略 splitNumber 产生过多刻度
+   */
+  private _niceStep(rawStep: number): number {
+    const mag = Math.pow(10, Math.floor(Math.log10(rawStep)))
+    const norm = rawStep / mag
+    if (norm <= 1) return mag
+    if (norm <= 2) return 2 * mag
+    if (norm <= 5) return 5 * mag
+    return 10 * mag
+  }
+
+  /* _buildChartOption：构建 ECharts 配置
+   * 流程：应用标签策略 → 计算漂亮 Y 轴边界 → 配置 grid/xAxis/yAxis/series/tooltip
+   */
   private _buildChartOption(data: any[], yData: number[], color: string, bottomPx: number) {
     const { interval, formatter } = this._getLabelStrategy(data)
-    return {
+    const dataMin = Math.floor(Math.min(...yData))
+    const dataMax = Math.ceil(Math.max(...yData))
+    const range = dataMax - dataMin
+    const maxTicks = 5
+    const step = range > 0 ? this._niceStep(range / maxTicks) : 1
+    const yMin = Math.floor(dataMin / step) * step
+    const yMax = Math.ceil(dataMax / step) * step
+    console.log('[adaptive] _buildChartOption:', { dataLen: data.length, dataMin, dataMax, range, step, yMin, yMax, ticks: (yMax - yMin) / step + 1 })
+    const opt = {
       grid: { top: 8, right: 60, bottom: bottomPx, left: 48 },
       xAxis: {
         type: 'category',
@@ -314,9 +340,13 @@ export class OverviewViewModel {
       yAxis: {
         type: 'value', position: 'right',
         splitLine: { lineStyle: { color: '#1a1d27' } },
-        axisLabel: { color: '#64748b', fontSize: 10, formatter: (v: number) => Math.round(v).toString() },
-        scale: true,
-        splitNumber: 4,
+        axisLabel: {
+          color: '#64748b', fontSize: 10,
+          formatter: (v: number) => Math.round(v).toString(),
+        },
+        min: yMin,
+        max: yMax,
+        interval: step,
       },
       series: [{
         name: yData === data.map(d => d.total || 0) ? '累计' : '新增',
@@ -327,6 +357,7 @@ export class OverviewViewModel {
       }],
       tooltip: { trigger: 'axis', backgroundColor: '#1a1d27', borderColor: '#2d3149', textStyle: { color: '#e2e8f0', fontSize: 11 } },
     }
+    return opt
   }
 
   /* drawCumulativeChart：绘制累计数据图表
@@ -335,8 +366,7 @@ export class OverviewViewModel {
   drawCumulativeChart(data: any[]): void {
     if (!data?.length) { this._cumulativeChart.clear(); return }
     const totalData = data.map(d => d.total || 0)
-    const opt = this._buildChartOption(data, totalData, '#7c3aed', 36)
-    this._cumulativeChart.setOption(opt)
+    this._cumulativeChart.setOption(this._buildChartOption(data, totalData, '#7c3aed', 36))
   }
 
   /* drawAddedChart：绘制新增数据图表
@@ -358,6 +388,12 @@ export class OverviewViewModel {
     try {
       const res = await api.fetchJson<any>('/chart-data?range=' + range)
       const data = res.data || []
+      console.log('[adaptive] fetchAndDrawChart:', {
+        range, dataLen: data.length,
+        firstDate: data[0]?.date, lastDate: data[data.length - 1]?.date,
+        firstTotal: data[0]?.total, lastTotal: data[data.length - 1]?.total,
+        sampleAdded: data.slice(0, 3).map(d => d.added),
+      })
       if (range !== 'all') {
         let rangeAdded = 0
         data.forEach((d: any) => { rangeAdded += d.added || 0 })
@@ -379,6 +415,11 @@ export class OverviewViewModel {
     try {
       const res = await api.fetchJson<any>('/chart-data?range=' + this.currentChartRange.value)
       const data = res.data || []
+      console.log('[adaptive] fetchAddedChart:', {
+        range: this.currentChartRange.value, dataLen: data.length,
+        firstDate: data[0]?.date, lastDate: data[data.length - 1]?.date,
+        sampleAdded: data.slice(0, 3).map(d => d.added),
+      })
       let total = 0
       data.forEach((d: any) => { total += d.added || 0 })
       this.animateCount(this.addedStatDisplay.value, total, 'addedStat')
