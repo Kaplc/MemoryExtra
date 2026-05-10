@@ -67,14 +67,13 @@ def _preview_text(text: str, max_len: int = 120) -> str:
     return text[:max_len] + '...'
 
 
-def search_memory(query: str, category: str) -> list[dict]:
+def search_memory(query: str) -> list[dict]:
     """搜索记忆（后端自动根据数据量选择最优策略），返回匹配的文本和分数
 
     Args:
         query: 搜索关键词
-        category: 记忆分类，必填，"life"/"fact"/"exp"
     """
-    result = _call("/memory/mcp/search", {"query": query, "category": category})
+    result = _call("/memory/mcp/search", {"query": query})
     if "error" in result:
         raise RuntimeError(result["error"])
     return [{"text": r["text"], "score": r.get("score", 0)} for r in result.get("results", [])]

@@ -33,10 +33,9 @@ def store(text: str, categories: list[MemoryCategory]) -> str:
 
 
 @mcp.tool()
-def search(query: str, category: MemoryCategory) -> dict:
-    """搜索记忆，返回文本和相关性分数。Args: query=搜索关键词；category=必填，LIFE=用户历史/偏好/背景，FACT=规则/事实/知识，EXP=技能/项目经历"""
+def search(query: str) -> dict:
+    """搜索记忆，返回文本和相关性分数。Args: query=搜索关键词"""
     if not query or not query.strip():
         raise ValueError("搜索关键词不能为空")
-    cat_value = category.value if isinstance(category, MemoryCategory) else category
-    results = search_memory(query, category=cat_value)
+    results = search_memory(query)
     return {"query": query, "results": results}
