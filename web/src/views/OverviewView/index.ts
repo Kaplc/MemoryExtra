@@ -319,14 +319,11 @@ export class OverviewViewModel {
    */
   private _buildChartOption(data: any[], yData: number[], color: string, bottomPx: number) {
     const { interval, formatter } = this._getLabelStrategy(data)
-    const dataMin = Math.floor(Math.min(...yData))
-    const dataMax = Math.ceil(Math.max(...yData))
-    const range = dataMax - dataMin
-    const maxTicks = 5
-    const step = range > 0 ? this._niceStep(range / maxTicks) : 1
-    const yMin = Math.floor(dataMin / step) * step
-    const yMax = Math.ceil(dataMax / step) * step
-    console.log('[adaptive] _buildChartOption:', { dataLen: data.length, dataMin, dataMax, range, step, yMin, yMax, ticks: (yMax - yMin) / step + 1 })
+    const yMin = Math.round(Math.min(...yData))
+    const yMax = Math.round(Math.max(...yData))
+    const range = yMax - yMin
+    const numIntervals = range > 0 ? Math.min(range, 4) : 1
+    const step = range / numIntervals
     const opt = {
       grid: { top: 8, right: 60, bottom: bottomPx, left: 48 },
       xAxis: {
@@ -339,14 +336,14 @@ export class OverviewViewModel {
       },
       yAxis: {
         type: 'value', position: 'right',
+        min: yMin, max: yMax, interval: step,
+        axisLine: { show: false },
+        axisTick: { show: false },
         splitLine: { lineStyle: { color: '#1a1d27' } },
         axisLabel: {
           color: '#64748b', fontSize: 10,
           formatter: (v: number) => Math.round(v).toString(),
         },
-        min: yMin,
-        max: yMax,
-        interval: step,
       },
       series: [{
         name: yData === data.map(d => d.total || 0) ? '累计' : '新增',
