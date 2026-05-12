@@ -1,6 +1,6 @@
 /* 记忆视图模型 - 组合各 Tab 类
  *
- * 作用：作为 MemoryView 的顶层 ViewModel，管理 SearchTab/StoreTab/OrganizeTab 三个子模块
+ * 作用：作为 MemoryView 的顶层 ViewModel，管理 SearchTab/StoreTab/OrganizeTab/SettingsTab 四个子模块
  * 实现：提供 Tab 切换、统计更新、动画数字等通用功能，各 Tab 独立维护自己的状态
  */
 
@@ -8,25 +8,28 @@ import { ref } from 'vue'
 import { SearchTab } from './SearchTab/SearchTab'
 import { StoreTab } from './StoreTab/StoreTab'
 import { OrganizeTab } from './OrganizeTab/OrganizeTab'
+import { MemorySettingsTab } from './SettingsTab/MemorySettingsTab'
 
 export class MemoryViewModel {
-  readonly currentTab = ref<'search' | 'store' | 'organize'>('search')
+  readonly currentTab = ref<'search' | 'store' | 'organize' | 'settings'>('search')
   readonly animatingCount = ref(0)
 
   readonly searchTab = new SearchTab()
   readonly storeTab = new StoreTab()
   readonly organizeTab = new OrganizeTab()
+  readonly settingsTab = new MemorySettingsTab()
 
   /* switchTab：切换 Tab
-   * 流程：更新 currentTab → 如果切换到 store Tab 则加载记忆列表
+   * 流程：更新 currentTab → 如果切换到 store Tab 则加载记忆列表 → 切换到 settings 则加载设置
    */
-  switchTab(tab: 'search' | 'store' | 'organize'): void {
+  switchTab(tab: 'search' | 'store' | 'organize' | 'settings'): void {
     this.currentTab.value = tab
     if (tab === 'store') this.storeTab.loadAll()
+    if (tab === 'settings') this.settingsTab.load()
   }
 
   /* loadAll：加载所有数据（初始化时调用）
-   * 流程：加载 store Tab 记忆列表 → 更新统计数字
+   * 流程：加载 store Tab 记忆列表 → 更新统计
    */
   async loadAll(): Promise<void> {
     this.storeTab.loadAll()
@@ -70,12 +73,13 @@ export class MemoryViewModel {
   }
 
   /* onMounted：组件挂载时的初始化
-   * 流程：加载搜索历史 → 更新统计 → 挂载文档点击事件监听（关闭历史面板）
+   * 流程：加载搜索历史 → 更新统计 → 加载记忆设置 → 挂载文档点击事件监听（关闭历史面板）
    */
   onMounted(): void {
     console.log('[MemoryView] mounted')
     this.searchTab.loadHistory()
     this.updateStats()
+    this.settingsTab.load()
     document.addEventListener('click', this.searchTab.onDocumentClick.bind(this.searchTab))
   }
 

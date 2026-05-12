@@ -5,7 +5,8 @@ from flask import request, jsonify, Response, stream_with_context
 from modules.brain.memory import (
     store_memory, search_memory, list_memories,
     delete_memory, update_memory, organize_memories,
-    dedup_memories, refine_memories, apply_organize
+    dedup_memories, refine_memories, apply_organize,
+    get_memory_settings, update_memory_settings,
 )
 from modules.brain.dedup import dedup_memories_iter, _dedup_pause_flag, _dedup_stop_flag
 
@@ -284,3 +285,15 @@ def register(app, ready_state, logger, stats_db):
         except Exception as e:
             logger.error(f"[memory/organize/apply] 失败: {e}")
             return jsonify({"error": str(e)})
+
+    @app.route('/memory/settings', methods=['GET'])
+    def memory_settings_get():
+        """获取记忆运行时设置（如 infer 开关）"""
+        return jsonify(get_memory_settings())
+
+    @app.route('/memory/settings', methods=['POST'])
+    def memory_settings_post():
+        """更新记忆运行时设置（如 infer 开关）"""
+        data = request.get_json() or {}
+        result = update_memory_settings(data)
+        return jsonify(result)

@@ -3,7 +3,9 @@
 mem0 全权管理：存储、去重、自动更新、自适应搜索。
 MCP 只暴露 store + search，其余给前端 UI 用。
 """
+import json
 import logging
+import os
 
 from modules.brain.mem0_adapter import get_mem0_client
 
@@ -11,6 +13,61 @@ logger = logging.getLogger('memory')
 
 # 默认 user_id，mem0 需要至少一个 entity id
 DEFAULT_USER_ID = "default"
+
+# ── 记忆设置持久化路径：~/.aibrain/config/memory_settings.json ──
+_SETTINGS_PATH = os.path.join(
+    os.path.expanduser("~"), ".aibrain", "config", "memory_settings.json"
+)
+
+_DEFAULT_MEMORY_SETTINGS: dict = {
+    "infer": True,
+}
+
+
+def _load_settings_from_disk() -> dict:
+    """从磁盘读取记忆设置，文件不存在时返回默认值"""
+    try:
+        if os.path.exists(_SETTINGS_PATH):
+            with open(_SETTINGS_PATH, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            # 只取已知字段，忽略未知键
+            result = dict(_DEFAULT_MEMORY_SETTINGS)
+            if "infer" in data:
+                result["infer"] = bool(data["infer"])
+            logger.info(f"[memory_settings] loaded from disk: {result}")
+            return result
+    except Exception as e:
+        logger.warning(f"[memory_settings] failed to load from disk: {e}")
+    return dict(_DEFAULT_MEMORY_SETTINGS)
+
+
+def _save_settings_to_disk(settings: dict) -> None:
+    """将记忆设置写入磁盘，目录不存在时自动创建"""
+    try:
+        os.makedirs(os.path.dirname(_SETTINGS_PATH), exist_ok=True)
+        with open(_SETTINGS_PATH, "w", encoding="utf-8") as f:
+            json.dump(settings, f, indent=2, ensure_ascii=False)
+        logger.info(f"[memory_settings] saved to disk: {_SETTINGS_PATH}")
+    except Exception as e:
+        logger.error(f"[memory_settings] failed to save to disk: {e}")
+
+
+# ── 初始化：启动时从磁盘加载（无需重启即可持久化）────────────────
+_memory_settings: dict = _load_settings_from_disk()
+
+
+def get_memory_settings() -> dict:
+    """返回当前记忆设置的副本"""
+    return dict(_memory_settings)
+
+
+def update_memory_settings(data: dict) -> dict:
+    """更新记忆设置（仅覆盖已知字段），持久化到磁盘，返回更新后的设置"""
+    if "infer" in data:
+        _memory_settings["infer"] = bool(data["infer"])
+    _save_settings_to_disk(_memory_settings)
+    logger.info(f"[memory_settings] updated: {_memory_settings}")
+    return get_memory_settings()
 
 MEMORY_CATEGORY_MAP = {
     "life": {"id_type": "user_id",  "id_value": DEFAULT_USER_ID, "metadata": {"category": "life"}},
@@ -88,9 +145,10 @@ def store_memory(text: str, memory_meta: dict = None) -> dict:
     """
     client = get_mem0_client()
 
+    use_infer = _memory_settings.get("infer", True)
     add_kwargs = {
         "user_id": "default",
-        "infer": True,
+        "infer": use_infer,
     }
 
     # 合并 metadata
@@ -102,9 +160,12 @@ def store_memory(text: str, memory_meta: dict = None) -> dict:
     try:
         result = client.add(text, **add_kwargs)
     except Exception as e:
-        logger.warning(f"store_memory failed (infer=True): {e}, fallback infer=False")
-        add_kwargs["infer"] = False
-        result = client.add(text, **add_kwargs)
+        if use_infer:
+            logger.warning(f"store_memory failed (infer=True): {e}, fallback infer=False")
+            add_kwargs["infer"] = False
+            result = client.add(text, **add_kwargs)
+        else:
+            raise
 
     # 完整日志：记录 mem0 返回的原始结果
     logger.info(f"[store_memory] mem0 raw result: {result}")

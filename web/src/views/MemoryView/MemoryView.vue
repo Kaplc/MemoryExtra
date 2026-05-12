@@ -4,6 +4,7 @@ import { memoryViewModel } from './index'
 import SearchPanel from './SearchTab/SearchPanel.vue'
 import StorePanel from './StoreTab/StorePanel.vue'
 import OrganizePanel from './OrganizeTab/OrganizePanel.vue'
+import MemorySettingsPanel from './SettingsTab/MemorySettingsPanel.vue'
 
 onMounted(() => memoryViewModel.onMounted())
 onUnmounted(() => memoryViewModel.onUnmounted())
@@ -16,6 +17,7 @@ onUnmounted(() => memoryViewModel.onUnmounted())
         <button class="nav-tab" :class="{ active: memoryViewModel.currentTab.value === 'search' }" @click="memoryViewModel.switchTab('search')">搜索记忆</button>
         <button class="nav-tab" :class="{ active: memoryViewModel.currentTab.value === 'store' }" @click="memoryViewModel.switchTab('store')">保存记忆</button>
         <button class="nav-tab" :class="{ active: memoryViewModel.currentTab.value === 'organize' }" @click="memoryViewModel.switchTab('organize')">合并记忆</button>
+        <button class="nav-tab nav-tab-settings" :class="{ active: memoryViewModel.currentTab.value === 'settings' }" @click="memoryViewModel.switchTab('settings')" title="记忆设置">⚙ 设置</button>
       </div>
       <div class="nav-stat">
         <span class="stat-value">{{ memoryViewModel.animatingCount.value }}</span>
@@ -27,6 +29,7 @@ onUnmounted(() => memoryViewModel.onUnmounted())
     <SearchPanel v-show="memoryViewModel.currentTab.value === 'search'" />
     <StorePanel v-show="memoryViewModel.currentTab.value === 'store'" />
     <OrganizePanel v-show="memoryViewModel.currentTab.value === 'organize'" />
+    <MemorySettingsPanel v-show="memoryViewModel.currentTab.value === 'settings'" />
   </div>
 </template>
 
@@ -37,6 +40,9 @@ onUnmounted(() => memoryViewModel.onUnmounted())
 .nav-tab { padding: 8px 20px; border: none; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; color: #94a3b8; background: transparent; transition: all .2s; }
 .nav-tab:hover { color: #e2e8f0; }
 .nav-tab.active { background: #7c3aed; color: #fff; }
+.nav-tab-settings { color: #64748b; font-size: 12px; padding: 8px 14px; }
+.nav-tab-settings:hover { color: #94a3b8; }
+.nav-tab-settings.active { background: #1e293b; color: #a78bfa; }
 .nav-stat { display: flex; align-items: center; gap: 8px; }
 .nav-stat .stat-value { font-size: 18px; font-weight: 700; color: #a78bfa; }
 .nav-stat .stat-label { font-size: 12px; color: #64748b; }
