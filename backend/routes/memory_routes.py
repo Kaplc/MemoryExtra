@@ -35,7 +35,10 @@ def register(app, ready_state, logger, stats_db):
         try:
             result = store_memory(text, memory_meta)
             logger.info(f"[memory/store] result={result}")
-            stats_db.record_action(added=1)
+            stats_db.record_action(
+                added=result.get('added_count', 0),
+                deleted=result.get('deleted_count', 0),
+            )
             return jsonify(result)
         except Exception as e:
             logger.error(f"[memory/store] error: {e}")
@@ -73,7 +76,10 @@ def register(app, ready_state, logger, stats_db):
                 if stored:
                     new_content = "\n".join(f"• {t}" for t in stored)
                     stats_db.update_stream_content(rowid, new_content)
-                stats_db.record_action(added=len(stored))
+                stats_db.record_action(
+                    added=result.get('added_count', 0),
+                    deleted=result.get('deleted_count', 0),
+                )
                 stats_db.update_stream_status(rowid, 'done')
             except Exception as e:
                 logger.error(f"[memory/mcp/store] 后台保存失败: {e}")
@@ -119,8 +125,8 @@ def register(app, ready_state, logger, stats_db):
         try:
             result = delete_memory(memory_id)
             stats_db.record_action(deleted=1)
-            stats_db.append_stream('delete', memory_id=memory_id)
-            return jsonify({"result": result})
+            stats_db.append_stream('delete', content=result.get('text', ''), memory_id=memory_id)
+            return jsonify({"result": result.get('result', '已删除')})
         except Exception as e:
             return jsonify({"error": str(e)})
 

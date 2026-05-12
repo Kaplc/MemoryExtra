@@ -47,6 +47,10 @@
         "PYTHONPATH": "."
       },
       "disabled": false
+    },
+     "企业微信文档":{
+      "type":"streamable-http",
+      "url":"https://qyapi.weixin.qq.com/mcp/robot-doc?apikey=YuaMuBkftQeFaxno0UmfazLTNAt9YN_bJGWZGeFQF5FrxH3fStTDHjXzJWh-COQC1caPRTLk-DqGDYTdvcf2ug"
     }
   },
   "disabledMcpServers": [

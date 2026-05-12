@@ -12,7 +12,6 @@ const vm = memoryViewModel
         type="text"
         placeholder="搜索相关记忆..."
         :disabled="vm.searchTab.loading.value"
-        @input="vm.searchTab.debounceSearch()"
         @keydown.enter="vm.searchTab.search()"
       />
       <button class="btn btn-primary" :disabled="vm.searchTab.loading.value" @click="vm.searchTab.search()">搜索</button>
@@ -38,7 +37,7 @@ const vm = memoryViewModel
       <div class="memory-list">
         <template v-if="vm.searchTab.activeQuery.value">
           <template v-if="vm.searchTab.results.value.length">
-            <div v-for="m in vm.searchTab.results.value" :key="m.id" class="memory-card search-result" :class="{ deleting: vm.searchTab.deletingId.value === m.id }">
+            <div v-for="m in vm.searchTab.results.value" :key="m.id" class="memory-card search-result" :class="{ deleting: vm.searchTab.deletingIds.value.has(m.id) }">
               <div class="memory-content">
                 <div class="memory-text">{{ m.text }}</div>
                 <div class="memory-meta">
@@ -47,7 +46,16 @@ const vm = memoryViewModel
                   <span class="memory-id">{{ m.shortId }}...</span>
                 </div>
               </div>
-              <button class="del-btn" @click="vm.searchTab.delete(m.id)" title="删除">✕</button>
+              <button
+                class="del-btn"
+                :class="{ 'del-btn--pending': vm.searchTab.pendingIds.value.has(m.id) }"
+                :disabled="vm.searchTab.pendingIds.value.has(m.id)"
+                @click="vm.searchTab.delete(m.id)"
+                title="删除"
+              >
+                <span v-if="vm.searchTab.pendingIds.value.has(m.id)" class="del-spinner"></span>
+                <span v-else>✕</span>
+              </button>
             </div>
           </template>
           <div v-else-if="!vm.searchTab.loading.value" class="empty">
@@ -95,8 +103,10 @@ const vm = memoryViewModel
 .memory-meta { display: flex; gap: 12px; margin-top: 6px; font-size: 11px; color: #64748b; }
 .memory-score { color: #a78bfa; }
 .memory-cat { color: #10b981; font-weight: 600; }
-.del-btn { background: none; border: none; color: #64748b; cursor: pointer; font-size: 14px; padding: 4px; }
-.del-btn:hover { color: #ef4444; }
+.del-btn { background: none; border: none; color: #64748b; cursor: pointer; font-size: 14px; padding: 4px; display: flex; align-items: center; justify-content: center; width: 22px; height: 22px; }
+.del-btn:hover:not(:disabled) { color: #ef4444; }
+.del-btn--pending { cursor: not-allowed; }
+.del-spinner { width: 13px; height: 13px; border: 2px solid #2d3149; border-top-color: #a78bfa; border-radius: 50%; animation: spin .7s linear infinite; display: inline-block; }
 .empty { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 60px 20px; color: #64748b; }
 .empty-icon { font-size: 48px; margin-bottom: 12px; }
 .empty-text { font-size: 14px; }

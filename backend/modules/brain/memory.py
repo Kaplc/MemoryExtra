@@ -175,23 +175,32 @@ def store_memory(text: str, memory_meta: dict = None) -> dict:
 
     added = [e["memory"] for e in events if e.get("event") == "ADD"]
     updated = [e["memory"] for e in events if e.get("event") == "UPDATE"]
+    deleted = [e["memory"] for e in events if e.get("event") == "DELETE"]
 
-    # 有新增时自增缓存计数
+    # 有新增时自增缓存计数；mem0 自动删除的也要同步减少
     global _memory_count_cache
-    if added and _memory_count_cache is not None:
-        _memory_count_cache += len(added)
+    if _memory_count_cache is not None:
+        _memory_count_cache += len(added) - len(deleted)
+        _memory_count_cache = max(0, _memory_count_cache)
 
     parts = []
     if added:
         parts.append(f"新增 {len(added)} 条记忆")
     if updated:
         parts.append(f"更新 {len(updated)} 条记忆")
+    if deleted:
+        parts.append(f"自动清理 {len(deleted)} 条重复")
 
     # 收集所有被记住的原始文本（用于 MCP 返回显示）
     stored_texts = added + updated
     msg = f"已记住: {', '.join(parts)}" if parts else "已处理"
 
-    return {"result": msg, "stored_texts": stored_texts}
+    return {
+        "result": msg,
+        "stored_texts": stored_texts,
+        "added_count": len(added),
+        "deleted_count": len(deleted),
+    }
 
 
 def search_memory(query: str) -> list[dict]:
@@ -294,14 +303,22 @@ def list_memories(offset: int = 0, limit: int = 200, source: str = None) -> list
     ]
 
 
-def delete_memory(memory_id: str) -> str:
-    """删除记忆（前端 UI 用）"""
+def delete_memory(memory_id: str) -> dict:
+    """删除记忆（前端 UI 用），删前先取回文本内容"""
     client = get_mem0_client()
+    # 删前先获取文本，用于流记录展示
+    memory_text = ''
+    try:
+        result = client.get(memory_id)
+        if result:
+            memory_text = result.get('memory', '') or result.get('text', '')
+    except Exception as e:
+        logger.warning(f"[delete_memory] get text failed for {memory_id}: {e}")
     client.delete(memory_id)
     global _memory_count_cache
     if _memory_count_cache is not None:
         _memory_count_cache = max(0, _memory_count_cache - 1)
-    return f"已删除记忆: {memory_id}"
+    return {"result": f"已删除记忆: {memory_id}", "text": memory_text}
 
 
 def update_memory(memory_id: str, new_text: str) -> str:

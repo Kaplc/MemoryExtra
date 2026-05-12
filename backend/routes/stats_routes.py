@@ -6,6 +6,25 @@ from modules.Stats.stats_mod import StatsManager
 _mgr = StatsManager.get_instance()
 
 
+def _anchor_to_actual(data: list) -> list:
+    """将累计曲线的最后一点锚定到实际记忆数量，整体平移保持曲线形状不变"""
+    if not data:
+        return data
+    try:
+        from modules.brain.memory import get_memory_count
+        actual = get_memory_count()
+        if actual <= 0:
+            return data
+        offset = actual - data[-1]['total']
+        if offset == 0:
+            return data
+        for d in data:
+            d['total'] = max(0, d['total'] + offset)
+    except Exception:
+        pass
+    return data
+
+
 def register(app, ready_state, logger, stats_db):
     @app.route('/chart-data', methods=['GET'])
     def chart_data():
@@ -15,7 +34,8 @@ def register(app, ready_state, logger, stats_db):
         today = _dt.date.today()
 
         if range_type == 'today':
-            return jsonify({"range": range_type, "data": _mgr.get_hourly_chart_data(stats_db)})
+            data = _mgr.get_hourly_chart_data(stats_db)
+            return jsonify({"range": range_type, "data": _anchor_to_actual(data)})
 
         if range_type == 'week':
             start = today - _dt.timedelta(days=6)
@@ -25,4 +45,4 @@ def register(app, ready_state, logger, stats_db):
             start = None
 
         data = _mgr.get_daily_chart_data(stats_db, start, today, range_type)
-        return jsonify({"range": range_type, "data": data})
+        return jsonify({"range": range_type, "data": _anchor_to_actual(data)})

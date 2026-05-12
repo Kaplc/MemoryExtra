@@ -157,17 +157,28 @@ export class FlaskCard {
     this.restartSeconds.value = 0
     try {
       await this._api.postJson('/overview/flask/restart', {})
-      const countdown = setInterval(() => {
-        this.restartSeconds.value++
-        if (this.restartSeconds.value >= 15) {
-          clearInterval(countdown)
+    } catch {
+      // 后端可能在返回前就关闭了，属正常
+    }
+    // 等后端重启：先等 3s 让旧进程退出，再轮询直到新进程就绪
+    await new Promise(r => setTimeout(r, 3000))
+    const maxWait = 30 // 最多等 30 秒
+    const poll = setInterval(async () => {
+      this.restartSeconds.value++
+      try {
+        await fetch('/overview/flask', { cache: 'no-store' })
+        // 请求成功 → 后端已就绪，刷新页面
+        clearInterval(poll)
+        window.location.reload()
+      } catch {
+        // 还没起来，继续等
+        if (this.restartSeconds.value >= maxWait) {
+          clearInterval(poll)
           this.restarting.value = false
         }
-      }, 1000)
-      this._restartTimer = countdown
-    } catch {
-      this.restarting.value = false
-    }
+      }
+    }, 1000)
+    this._restartTimer = poll
   }
 
   cleanup(): void {

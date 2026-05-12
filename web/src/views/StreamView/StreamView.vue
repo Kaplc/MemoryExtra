@@ -89,6 +89,44 @@ onUnmounted(() => streamViewModel.onUnmounted())
           </div>
         </div>
       </div>
+
+      <!-- Third column: Delete actions -->
+      <div class="steam-column">
+        <div class="steam-column-header">
+          <div class="steam-column-dot delete"></div>
+          <span>删除记忆</span>
+          <span class="steam-column-count">{{ streamViewModel.deleteCountText.value }}</span>
+        </div>
+        <div class="steam-list">
+          <template v-if="streamViewModel.deleteItems.value.length === 0">
+            <div class="steam-empty">暂无删除记录</div>
+          </template>
+          <div
+            v-for="item in streamViewModel.deleteItems.value"
+            :key="item.id"
+            :data-id="item.id"
+            class="steam-item"
+            :class="{ new: streamViewModel.isNew(item.id) }"
+          >
+            <div class="steam-dot delete"></div>
+            <div class="steam-body">
+              <span class="steam-action-label delete-label">{{ streamViewModel.getActionLabel(item.action) }}</span>
+              <span class="steam-text">{{ streamViewModel.getItemText(item) }}</span>
+              <!-- status icon -->
+              <div v-if="streamViewModel.getStatusIcon(item.status) === 'pending'" class="steam-status-icon">
+                <div class="steam-spinner"></div>
+              </div>
+              <div v-else-if="streamViewModel.getStatusIcon(item.status) === 'done'" class="steam-status-icon">
+                <span class="steam-check">&#10003;</span>
+              </div>
+              <div v-else-if="streamViewModel.getStatusIcon(item.status) === 'error'" class="steam-status-icon">
+                <span class="steam-error">&#10007;</span>
+              </div>
+            </div>
+            <div class="steam-time">{{ streamViewModel.formatTime(item.created_at) }}</div>
+          </div>
+        </div>
+      </div>
     </div>
   </div>
 </template>
@@ -168,6 +206,11 @@ onUnmounted(() => streamViewModel.onUnmounted())
 .steam-column-dot.search {
   background: #3b82f6;
   box-shadow: 0 0 6px #3b82f666;
+}
+
+.steam-column-dot.delete {
+  background: #ef4444;
+  box-shadow: 0 0 6px #ef444466;
 }
 
 .steam-column-count {
@@ -261,6 +304,10 @@ onUnmounted(() => streamViewModel.onUnmounted())
   color: #a78bfa;
   margin-right: 6px;
   flex-shrink: 0;
+}
+
+.steam-action-label.delete-label {
+  color: #f87171;
 }
 
 .steam-text {

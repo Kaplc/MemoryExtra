@@ -28,16 +28,19 @@ export class StreamViewModel {
   // State
   readonly storeItems = ref<StreamItem[]>([])
   readonly searchItems = ref<StreamItem[]>([])
+  readonly deleteItems = ref<StreamItem[]>([])
   readonly storeTotal = ref(0)
   readonly searchTotal = ref(0)
+  readonly deleteTotal = ref(0)
   readonly knownIds = ref(new Set<string>())
 
   // Computed
   readonly totalCount = computed(() =>
-    `MCP ${this.storeTotal.value} 条 / 搜索 ${this.searchTotal.value} 条`
+    `MCP ${this.storeTotal.value} 条 / 搜索 ${this.searchTotal.value} 条 / 删除 ${this.deleteTotal.value} 条`
   )
   readonly storeCountText = computed(() => `${this.storeItems.value.length} 条`)
   readonly searchCountText = computed(() => `${this.searchItems.value.length} 条`)
+  readonly deleteCountText = computed(() => `${this.deleteItems.value.length} 条`)
 
   // Private
   private _api = useApi()
@@ -97,19 +100,23 @@ export class StreamViewModel {
    */
   async loadStream(): Promise<void> {
     try {
-      const [storeRes, searchRes] = await Promise.all([
+      const [storeRes, searchRes, deleteRes] = await Promise.all([
         this._api.fetchJson<StreamResponse>('/stream/api?action=store&days=3'),
         this._api.fetchJson<StreamResponse>('/stream/api?action=search&days=3'),
+        this._api.fetchJson<StreamResponse>('/stream/api?action=delete&days=3'),
       ])
 
       this.storeItems.value = storeRes.items || []
       this.searchItems.value = searchRes.items || []
+      this.deleteItems.value = deleteRes.items || []
       this.storeTotal.value = storeRes.total || 0
       this.searchTotal.value = searchRes.total || 0
+      this.deleteTotal.value = deleteRes.total || 0
 
       requestAnimationFrame(() => {
         this.markKnown(this.storeItems.value)
         this.markKnown(this.searchItems.value)
+        this.markKnown(this.deleteItems.value)
       })
     } catch (e) {
       console.error('[SteamView] load failed:', e)
@@ -123,19 +130,21 @@ export class StreamViewModel {
    * 优化：仅当状态真正变化时触发响应式更新
    */
   async pollStatus(): Promise<void> {
-    const allCurrent = [...this.storeItems.value, ...this.searchItems.value]
+    const allCurrent = [...this.storeItems.value, ...this.searchItems.value, ...this.deleteItems.value]
     const hasPending = allCurrent.some(i => i.status === 'pending')
     if (!hasPending) return
 
     try {
-      const [storeRes, searchRes] = await Promise.all([
+      const [storeRes, searchRes, deleteRes] = await Promise.all([
         this._api.fetchJson<StreamResponse>('/stream/api?action=store&days=3'),
         this._api.fetchJson<StreamResponse>('/stream/api?action=search&days=3'),
+        this._api.fetchJson<StreamResponse>('/stream/api?action=delete&days=3'),
       ])
 
       const allFresh = [
         ...(storeRes.items || []),
         ...(searchRes.items || []),
+        ...(deleteRes.items || []),
       ]
       const statusMap = new Map<number, string>()
       allFresh.forEach(i => statusMap.set(i.id, i.status))
@@ -154,8 +163,10 @@ export class StreamViewModel {
 
       this.storeItems.value = [...this.storeItems.value]
       this.searchItems.value = [...this.searchItems.value]
+      this.deleteItems.value = [...this.deleteItems.value]
       updateStatus(this.storeItems.value)
       updateStatus(this.searchItems.value)
+      updateStatus(this.deleteItems.value)
     } catch {
       // silent
     }

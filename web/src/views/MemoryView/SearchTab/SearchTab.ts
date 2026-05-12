@@ -18,7 +18,8 @@ export class SearchTab {
   readonly showHistory = ref(false)
   readonly loading = ref(false)
   readonly isSearching = ref(false)
-  readonly deletingId = ref<string | null>(null)
+  readonly deletingIds = ref<Set<string>>(new Set())
+  readonly pendingIds = ref<Set<string>>(new Set())
 
   private _api = useApi()
   private _toast = useToast()
@@ -45,6 +46,7 @@ export class SearchTab {
     this.isSearching.value = true
     this.loading.value = true
     this.activeQuery.value = query
+    this.results.value = []
     try {
       const r = await this._api.postJson<{ results: Memory[] }>('/memory/search', { query })
       this.results.value = (r.results || []).map(raw => new Memory(raw))
@@ -95,21 +97,28 @@ export class SearchTab {
   }
 
   /* delete：删除单条搜索结果中的记忆
-   * 流程：标记删除中状态 → 延迟 300ms 优化视觉效果 → POST /memory/delete → 移除本地项 → 更新统计
+   * 流程：标记 pending（按钮转圈）→ 调 API → 成功后触发滑出动画 → 延迟 300ms 等动画完成 → 移除列表项
+   * 支持同时删除多条，互不影响
    */
   async delete(id: string): Promise<void> {
-    this.deletingId.value = id
-    await new Promise(r => setTimeout(r, 300))
+    if (this.pendingIds.value.has(id)) return
+    this.pendingIds.value = new Set(this.pendingIds.value).add(id)
     try {
       const r = await this._api.postJson<{ result?: string; error?: string }>('/memory/delete', { memory_id: id })
-      if (r.error) { this._toast.show(r.error, 'error'); this.deletingId.value = null; return }
+      if (r.error) { this._toast.show(r.error, 'error'); return }
       this._toast.show(r.result || '删除成功')
+      // API 成功后才触发滑出动画
+      this.deletingIds.value = new Set(this.deletingIds.value).add(id)
+      await new Promise(r => setTimeout(r, 300))
       this.results.value = this.results.value.filter(m => m.id !== id)
+      // 同步从 storeTab 本地缓存中移除
+      memoryViewModel.storeTab.memories.value = memoryViewModel.storeTab.memories.value.filter(m => m.id !== id)
       memoryViewModel.updateStats()
     } catch {
       this._toast.show('删除失败', 'error')
     } finally {
-      this.deletingId.value = null
+      const p = new Set(this.pendingIds.value); p.delete(id); this.pendingIds.value = p
+      const d = new Set(this.deletingIds.value); d.delete(id); this.deletingIds.value = d
     }
   }
 
