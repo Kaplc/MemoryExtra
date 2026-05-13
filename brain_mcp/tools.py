@@ -32,14 +32,13 @@ def _call(path: str, data: dict) -> dict:
         return json.loads(resp.read())
 
 
-def store_memory(text: str, categories: list) -> str:
+def store_memory(text: str) -> str:
     """存储记忆（异步后台执行），返回确认文本
 
     Args:
         text: 记忆文本
-        categories: 记忆分类列表，必填，如 ["user"] 或 ["fact", "skill"]
     """
-    result = _call("/memory/mcp/store", {"text": text, "categories": categories})
+    result = _call("/memory/mcp/store", {"text": text})
     if "error" in result:
         raise RuntimeError(result["error"])
     # 异步模式：立即返回，实际存储在后台

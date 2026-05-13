@@ -58,3 +58,4 @@ backend/.pm.pid
 web/dist/
 web/test-output/
 .restart_trace.log
+.claude/settings.local.json
