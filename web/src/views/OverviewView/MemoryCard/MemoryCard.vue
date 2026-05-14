@@ -1,24 +1,15 @@
 <script setup lang="ts">
-import { onMounted, onActivated, onUnmounted, ref, nextTick } from 'vue'
-import { overviewViewModel } from '../index'
-
-const cumulativeChartRef = ref<HTMLElement | null>(null)
-const addedChartRef = ref<HTMLElement | null>(null)
-const statTotalDisplayEl = ref<HTMLElement | null>(null)
-const statIncrementDisplayEl = ref<HTMLElement | null>(null)
-const addedStatDisplayEl = ref<HTMLElement | null>(null)
+import { onMounted, onActivated, nextTick } from 'vue'
+import { memoryCardViewModel as vm } from './MemoryCard'
 
 onMounted(async () => {
-  overviewViewModel.cumulativeChartRef.value = cumulativeChartRef.value
-  overviewViewModel.addedChartRef.value = addedChartRef.value
-  overviewViewModel.statTotalDisplay.value = statTotalDisplayEl.value
-  overviewViewModel.statIncrementDisplay.value = statIncrementDisplayEl.value
-  overviewViewModel.addedStatDisplay.value = addedStatDisplayEl.value
+  await nextTick()
+  // DOM refs 注入由 template ref 绑定完成，无需额外赋值
 })
 
 onActivated(async () => {
   await nextTick()
-  overviewViewModel.redrawCharts()
+  vm.redrawCharts()
 })
 </script>
 
@@ -30,62 +21,62 @@ onActivated(async () => {
         <div class="data-tabs">
           <button
             class="data-tab"
-            :class="{ active: overviewViewModel.currentDataView.value === 'cumulative' }"
-            @click="overviewViewModel.setDataView('cumulative')"
+            :class="{ active: vm.currentDataView.value === 'cumulative' }"
+            @click="vm.setDataView('cumulative')"
           >累计曲线</button>
           <button
             class="data-tab"
-            :class="{ active: overviewViewModel.currentDataView.value === 'added' }"
-            @click="overviewViewModel.setDataView('added')"
+            :class="{ active: vm.currentDataView.value === 'added' }"
+            @click="vm.setDataView('added')"
           >新增曲线</button>
         </div>
       </div>
       <div class="chart-tabs">
         <button
           class="chart-tab"
-          :class="{ active: overviewViewModel.currentChartRange.value === 'today' }"
-          @click="overviewViewModel.setChartRange('today')"
+          :class="{ active: vm.currentChartRange.value === 'today' }"
+          @click="vm.setChartRange('today')"
         >近24小时</button>
         <button
           class="chart-tab"
-          :class="{ active: overviewViewModel.currentChartRange.value === 'week' }"
-          @click="overviewViewModel.setChartRange('week')"
+          :class="{ active: vm.currentChartRange.value === 'week' }"
+          @click="vm.setChartRange('week')"
         >7天</button>
         <button
           class="chart-tab"
-          :class="{ active: overviewViewModel.currentChartRange.value === 'month' }"
-          @click="overviewViewModel.setChartRange('month')"
+          :class="{ active: vm.currentChartRange.value === 'month' }"
+          @click="vm.setChartRange('month')"
         >30天</button>
         <button
           class="chart-tab"
-          :class="{ active: overviewViewModel.currentChartRange.value === 'all' }"
-          @click="overviewViewModel.setChartRange('all')"
+          :class="{ active: vm.currentChartRange.value === 'all' }"
+          @click="vm.setChartRange('all')"
         >全部</button>
       </div>
     </div>
 
     <!-- Cumulative chart view -->
-    <div v-show="overviewViewModel.currentDataView.value === 'cumulative'">
-      <div ref="cumulativeChartRef" style="width:100%;height:140px;"></div>
+    <div v-show="vm.currentDataView.value === 'cumulative'">
+      <div :ref="el => vm.cumulativeChartRef.value = el as HTMLElement" style="width:100%;height:140px;"></div>
       <div class="chart-stats">
         <div class="stat-box">
-          <div class="sb-value" ref="statTotalDisplayEl"></div>
+          <div class="sb-value" :ref="el => vm.statTotalDisplay.value = el as HTMLElement"></div>
           <div class="sb-label">记忆总数</div>
         </div>
-        <div class="stat-box" v-show="overviewViewModel.currentChartRange.value !== 'all'">
-          <div class="sb-value" ref="statIncrementDisplayEl">{{ overviewViewModel.statIncrementValue }}</div>
-          <div class="sb-label">{{ overviewViewModel.statIncrementLabel }}</div>
+        <div class="stat-box" v-show="vm.currentChartRange.value !== 'all'">
+          <div class="sb-value" :ref="el => vm.statIncrementDisplay.value = el as HTMLElement"></div>
+          <div class="sb-label">{{ vm.statIncrementLabel.value }}</div>
         </div>
       </div>
     </div>
 
     <!-- Added chart view -->
-    <div v-show="overviewViewModel.currentDataView.value === 'added'">
-      <div ref="addedChartRef" style="width:100%;height:140px;"></div>
+    <div v-show="vm.currentDataView.value === 'added'">
+      <div :ref="el => vm.addedChartRef.value = el as HTMLElement" style="width:100%;height:140px;"></div>
       <div class="chart-stats single">
         <div class="stat-box">
-          <div class="sb-value" ref="addedStatDisplayEl"></div>
-          <div class="sb-label">{{ overviewViewModel.addedStatLabel }}</div>
+          <div class="sb-value" :ref="el => vm.addedStatDisplay.value = el as HTMLElement"></div>
+          <div class="sb-label">{{ vm.addedStatLabel.value }}</div>
         </div>
       </div>
     </div>
