@@ -1,9 +1,24 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted } from 'vue'
+import { onMounted, onUnmounted, ref } from 'vue'
 import { streamViewModel } from './StreamViewModel'
 
 onMounted(() => streamViewModel.onMounted())
 onUnmounted(() => streamViewModel.onUnmounted())
+
+const expandedIds = ref(new Set<number>())
+
+function toggleExpand(id: number) {
+  if (expandedIds.value.has(id)) {
+    expandedIds.value.delete(id)
+  } else {
+    expandedIds.value.add(id)
+  }
+  expandedIds.value = new Set(expandedIds.value)
+}
+
+function isExpanded(id: number): boolean {
+  return expandedIds.value.has(id)
+}
 </script>
 
 <template>
@@ -14,116 +29,60 @@ onUnmounted(() => streamViewModel.onUnmounted())
     </div>
 
     <div class="steam-columns">
-      <!-- Left column: MCP store actions -->
-      <div class="steam-column">
+      <div
+        v-for="stream in streamViewModel.streams"
+        :key="stream.title"
+        class="steam-column"
+      >
+        <!-- 列标题 -->
         <div class="steam-column-header">
-          <div class="steam-column-dot store"></div>
-          <span>MCP调用</span>
-          <span class="steam-column-count">{{ streamViewModel.storeCountText.value }}</span>
+          <div class="steam-column-dot" :class="stream.columnDotClass"></div>
+          <span>{{ stream.title }}</span>
+          <span class="steam-column-count">{{ stream.countText.value }}</span>
         </div>
-        <div class="steam-list">
-          <template v-if="streamViewModel.storeItems.value.length === 0">
-            <div class="steam-empty">暂无写入记录</div>
-          </template>
-          <div
-            v-for="item in streamViewModel.storeItems.value"
-            :key="item.id"
-            :data-id="item.id"
-            class="steam-item"
-            :class="{ new: streamViewModel.isNew(item.id) }"
-          >
-            <div class="steam-dot" :class="item.action"></div>
-            <div class="steam-body">
-              <span class="steam-action-label">{{ streamViewModel.getActionLabel(item.action) }}</span>
-              <span class="steam-text">{{ streamViewModel.getItemText(item) }}</span>
-              <!-- status icon -->
-              <div v-if="streamViewModel.getStatusIcon(item.status) === 'pending'" class="steam-status-icon">
-                <div class="steam-spinner"></div>
-              </div>
-              <div v-else-if="streamViewModel.getStatusIcon(item.status) === 'done'" class="steam-status-icon">
-                <span class="steam-check">&#10003;</span>
-              </div>
-              <div v-else-if="streamViewModel.getStatusIcon(item.status) === 'error'" class="steam-status-icon">
-                <span class="steam-error">&#10007;</span>
-              </div>
-            </div>
-            <div class="steam-time">{{ streamViewModel.formatTime(item.created_at) }}</div>
-          </div>
-        </div>
-      </div>
 
-      <!-- Right column: Search actions -->
-      <div class="steam-column">
-        <div class="steam-column-header">
-          <div class="steam-column-dot search"></div>
-          <span>查询记忆</span>
-          <span class="steam-column-count">{{ streamViewModel.searchCountText.value }}</span>
-        </div>
+        <!-- 列表 -->
         <div class="steam-list">
-          <template v-if="streamViewModel.searchItems.value.length === 0">
-            <div class="steam-empty">暂无查询记录</div>
-          </template>
-          <div
-            v-for="item in streamViewModel.searchItems.value"
-            :key="item.id"
-            :data-id="item.id"
-            class="steam-item"
-            :class="{ new: streamViewModel.isNew(item.id) }"
-          >
-            <div class="steam-dot" :class="item.action"></div>
-            <div class="steam-body">
-              <span class="steam-action-label">{{ streamViewModel.getActionLabel(item.action) }}</span>
-              <span class="steam-text">{{ streamViewModel.getItemText(item) }}</span>
-              <!-- status icon -->
-              <div v-if="streamViewModel.getStatusIcon(item.status) === 'pending'" class="steam-status-icon">
-                <div class="steam-spinner"></div>
-              </div>
-              <div v-else-if="streamViewModel.getStatusIcon(item.status) === 'done'" class="steam-status-icon">
-                <span class="steam-check">&#10003;</span>
-              </div>
-              <div v-else-if="streamViewModel.getStatusIcon(item.status) === 'error'" class="steam-status-icon">
-                <span class="steam-error">&#10007;</span>
-              </div>
-            </div>
-            <div class="steam-time">{{ streamViewModel.formatTime(item.created_at) }}</div>
+          <div v-if="stream.items.value.length === 0" class="steam-empty">
+            {{ stream.emptyText }}
           </div>
-        </div>
-      </div>
 
-      <!-- Third column: Delete actions -->
-      <div class="steam-column">
-        <div class="steam-column-header">
-          <div class="steam-column-dot delete"></div>
-          <span>删除记忆</span>
-          <span class="steam-column-count">{{ streamViewModel.deleteCountText.value }}</span>
-        </div>
-        <div class="steam-list">
-          <template v-if="streamViewModel.deleteItems.value.length === 0">
-            <div class="steam-empty">暂无删除记录</div>
-          </template>
           <div
-            v-for="item in streamViewModel.deleteItems.value"
+            v-for="item in stream.items.value"
             :key="item.id"
             :data-id="item.id"
             class="steam-item"
             :class="{ new: streamViewModel.isNew(item.id) }"
           >
-            <div class="steam-dot delete"></div>
+            <div class="steam-dot" :class="item.dotClass"></div>
+
             <div class="steam-body">
-              <span class="steam-action-label delete-label">{{ streamViewModel.getActionLabel(item.action) }}</span>
-              <span class="steam-text">{{ streamViewModel.getItemText(item) }}</span>
-              <!-- status icon -->
-              <div v-if="streamViewModel.getStatusIcon(item.status) === 'pending'" class="steam-status-icon">
+              <span class="steam-action-label" :class="item.labelClass">{{ item.actionLabel }}</span>
+              <span
+                class="steam-text"
+                :class="{ 'steam-text--expanded': isExpanded(item.id) }"
+              >{{ item.displayText }}</span>
+
+              <!-- 展开/折叠箭头 -->
+              <button
+                class="steam-expand-btn"
+                :class="{ 'steam-expand-btn--open': isExpanded(item.id) }"
+                @click.stop="toggleExpand(item.id)"
+              >▶</button>
+
+              <!-- 状态图标 -->
+              <div v-if="item.statusIcon === 'pending'" class="steam-status-icon">
                 <div class="steam-spinner"></div>
               </div>
-              <div v-else-if="streamViewModel.getStatusIcon(item.status) === 'done'" class="steam-status-icon">
+              <div v-else-if="item.statusIcon === 'done'" class="steam-status-icon">
                 <span class="steam-check">&#10003;</span>
               </div>
-              <div v-else-if="streamViewModel.getStatusIcon(item.status) === 'error'" class="steam-status-icon">
+              <div v-else-if="item.statusIcon === 'error'" class="steam-status-icon">
                 <span class="steam-error">&#10007;</span>
               </div>
             </div>
-            <div class="steam-time">{{ streamViewModel.formatTime(item.created_at) }}</div>
+
+            <div class="steam-time">{{ item.displayTime }}</div>
           </div>
         </div>
       </div>
@@ -162,7 +121,6 @@ onUnmounted(() => streamViewModel.onUnmounted())
   color: #64748b;
 }
 
-/* Two-column layout */
 .steam-columns {
   display: flex;
   gap: 16px;
@@ -198,20 +156,9 @@ onUnmounted(() => streamViewModel.onUnmounted())
   border-radius: 50%;
 }
 
-.steam-column-dot.store {
-  background: #22c55e;
-  box-shadow: 0 0 6px #22c55e66;
-}
-
-.steam-column-dot.search {
-  background: #3b82f6;
-  box-shadow: 0 0 6px #3b82f666;
-}
-
-.steam-column-dot.delete {
-  background: #ef4444;
-  box-shadow: 0 0 6px #ef444466;
-}
+.steam-column-dot.store  { background: #22c55e; box-shadow: 0 0 6px #22c55e66; }
+.steam-column-dot.search { background: #3b82f6; box-shadow: 0 0 6px #3b82f666; }
+.steam-column-dot.delete { background: #ef4444; box-shadow: 0 0 6px #ef444466; }
 
 .steam-column-count {
   margin-left: auto;
@@ -275,20 +222,9 @@ onUnmounted(() => streamViewModel.onUnmounted())
   margin-top: 4px;
 }
 
-.steam-dot.store {
-  background: #22c55e;
-  box-shadow: 0 0 6px #22c55e66;
-}
-
-.steam-dot.search {
-  background: #3b82f6;
-  box-shadow: 0 0 6px #3b82f666;
-}
-
-.steam-dot.delete {
-  background: #ef4444;
-  box-shadow: 0 0 6px #ef444466;
-}
+.steam-dot.store  { background: #22c55e; box-shadow: 0 0 6px #22c55e66; }
+.steam-dot.search { background: #3b82f6; box-shadow: 0 0 6px #3b82f666; }
+.steam-dot.delete { background: #ef4444; box-shadow: 0 0 6px #ef444466; }
 
 .steam-body {
   flex: 1;
@@ -302,20 +238,56 @@ onUnmounted(() => streamViewModel.onUnmounted())
 .steam-action-label {
   font-weight: 600;
   color: #a78bfa;
-  margin-right: 6px;
   flex-shrink: 0;
 }
 
-.steam-action-label.delete-label {
-  color: #f87171;
-}
+.steam-action-label.delete-label { color: #f87171; }
 
+/* 默认单行截断 */
 .steam-text {
-  white-space: pre-wrap;
-  word-break: break-word;
   color: #cbd5e1;
   line-height: 1.5;
   flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* 展开后全文显示 */
+.steam-text--expanded {
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow: visible;
+}
+
+/* 展开箭头按钮 */
+.steam-expand-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: #475569;
+  font-size: 9px;
+  padding: 0;
+  flex-shrink: 0;
+  line-height: 1;
+  margin-top: 3px;
+  transform: rotate(0deg);
+  transition: transform 0.2s ease, color 0.2s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+}
+
+.steam-expand-btn:hover {
+  color: #94a3b8;
+}
+
+.steam-expand-btn--open {
+  transform: rotate(90deg);
+  color: #a78bfa;
 }
 
 .steam-time {
@@ -333,7 +305,6 @@ onUnmounted(() => streamViewModel.onUnmounted())
   font-size: 13px;
 }
 
-/* Status icons: spinner / check / error */
 .steam-status-icon {
   width: 16px;
   height: 16px;
@@ -354,20 +325,9 @@ onUnmounted(() => streamViewModel.onUnmounted())
 }
 
 @keyframes steamSpin {
-  to {
-    transform: rotate(360deg);
-  }
+  to { transform: rotate(360deg); }
 }
 
-.steam-check {
-  font-size: 13px;
-  font-weight: 700;
-  color: #22c55e;
-}
-
-.steam-error {
-  font-size: 12px;
-  font-weight: 700;
-  color: #ef4444;
-}
+.steam-check { font-size: 13px; font-weight: 700; color: #22c55e; }
+.steam-error { font-size: 12px; font-weight: 700; color: #ef4444; }
 </style>
