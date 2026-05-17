@@ -117,6 +117,22 @@ class GraphMemory:
 
                 logger.info(f"[graph:link] parse item={item!r} → old={old_entity!r} new={new_entity!r}")
 
+                # 验证：旧实体必须已存在于图中
+                if old_entity:
+                    exists = self._exec(
+                        "SELECT 1 FROM entity_nodes WHERE name = ?", (old_entity,)
+                    )
+                    if not exists:
+                        raise ValueError(f"旧实体「{old_entity}」不存在，必须先创建或使用已有实体")
+
+                # 验证：新实体必须不存在，防止重复关联
+                if new_entity:
+                    exists = self._exec(
+                        "SELECT 1 FROM entity_nodes WHERE name = ?", (new_entity,)
+                    )
+                    if exists:
+                        raise ValueError(f"新实体「{new_entity}」已存在，不能重复关联旧实体，请使用新的实体名")
+
                 if new_entity:
                     self._exec(
                         "INSERT OR IGNORE INTO entity_nodes (name, type) VALUES (?, 'concept')",
@@ -132,11 +148,16 @@ class GraphMemory:
                         "INSERT OR IGNORE INTO entity_nodes (name, type) VALUES (?, 'concept')",
                         (old_entity,),
                     )
+                    # 双向边：A→B 和 B→A
                     self._exec(
                         "INSERT OR IGNORE INTO entity_relations (from_entity, to_entity) VALUES (?, ?)",
                         (old_entity, new_entity),
                     )
-                    logger.info(f"[graph:link] → inserted relation {old_entity!r} → {new_entity!r}")
+                    self._exec(
+                        "INSERT OR IGNORE INTO entity_relations (from_entity, to_entity) VALUES (?, ?)",
+                        (new_entity, old_entity),
+                    )
+                    logger.info(f"[graph:link] → inserted bidirectional relation {old_entity!r} ↔ {new_entity!r}")
             self._conn.commit()
             logger.info(f"[graph:link] {mem0_id[:8]} → {len(link_entities)} items")
         except Exception as e:
@@ -268,8 +289,12 @@ class GraphMemory:
         )
         logger.info(f"[graph:search_entity] related_entities (mentions) query returned: {related_rows}")
 
-        # 多层深度召回：从深度1开始迭代扩展到 max_depth 层
+        # 多层深度召回：双向遍历，衰减权重，限制数量
         max_depth = 3
+        depth_weights = {1: 1.0, 2: 0.6, 3: 0.3}
+        max_entities_per_depth = 5
+        max_memories = 15
+        max_related = 10
         frontier = [entity_name]
         visited = {entity_name}
         depth_results = {}
@@ -278,8 +303,10 @@ class GraphMemory:
             next_frontier = []
             for current in frontier:
                 rows = self._exec(
-                    "SELECT to_entity FROM entity_relations WHERE from_entity = ?",
-                    (current,),
+                    """SELECT to_entity FROM entity_relations WHERE from_entity = ?
+                       UNION
+                       SELECT from_entity FROM entity_relations WHERE to_entity = ?""",
+                    (current, current),
                 )
                 for r in rows:
                     next_entity = r[0]
@@ -287,33 +314,60 @@ class GraphMemory:
                         visited.add(next_entity)
                         depth_results.setdefault(depth, []).append(next_entity)
                         next_frontier.append(next_entity)
+            # 每层只保留连接数最多的 top N 实体
+            if len(next_frontier) > max_entities_per_depth:
+                counts = []
+                for e in next_frontier:
+                    c = self._exec(
+                        "SELECT COUNT(*) FROM mentions WHERE entity_name = ?", (e,)
+                    )
+                    counts.append((e, c[0][0] if c else 0))
+                counts.sort(key=lambda x: x[1], reverse=True)
+                next_frontier = [e for e, _ in counts[:max_entities_per_depth]]
+                depth_results[depth] = next_frontier
             frontier = next_frontier
             if not frontier:
                 break
 
-        all_related_names = []
-        for d in range(2, max_depth + 1):
-            all_related_names.extend(depth_results.get(d, []))
-        all_related_names = list(set(all_related_names))
+        # 全深度召回，带权重排序
+        weighted_entities = []
+        for d in range(1, max_depth + 1):
+            for e in depth_results.get(d, []):
+                weighted_entities.append((e, depth_weights.get(d, 0.1)))
+        all_related_names = list(set(e for e, _ in weighted_entities))
 
-        # 收集所有涉及的记忆：根实体 + 深度2+ 实体的 mentions
+        # 收集记忆并去重，按关联深度权重排序
         all_entity_names = [entity_name] + all_related_names
+        seen_ids = set()
         if all_entity_names:
             placeholders = ','.join('?' * len(all_entity_names))
             mem_rows = self._exec(
-                f"""SELECT m.mem0_id, m.text FROM memory_nodes m
+                f"""SELECT m.mem0_id, m.text, mn.entity_name FROM memory_nodes m
                    JOIN mentions mn ON m.mem0_id = mn.mem0_id
                    WHERE mn.entity_name IN ({placeholders})""",
                 all_entity_names,
             )
-            memories = [{"mem0_id": r[0], "text": r[1]} for r in mem_rows]
+            entity_weight_map = {e: w for e, w in weighted_entities}
+            for r in mem_rows:
+                if r[0] not in seen_ids:
+                    seen_ids.add(r[0])
+                    w = entity_weight_map.get(r[2], 1.0) if r[2] != entity_name else 1.0
+                    memories.append({"mem0_id": r[0], "text": r[1], "weight": w})
+            memories.sort(key=lambda x: x.get("weight", 0), reverse=True)
+            memories = memories[:max_memories]
 
         related = []
         if all_related_names:
-            placeholders = ','.join('?' * len(all_related_names))
+            # 按权重排序，只保留 top N
+            sorted_names = sorted(
+                all_related_names,
+                key=lambda e: entity_weight_map.get(e, 0.1),
+                reverse=True,
+            )[:max_related]
+            placeholders = ','.join('?' * len(sorted_names))
             rel_rows = self._exec(
                 f"SELECT name, type FROM entity_nodes WHERE name IN ({placeholders})",
-                all_related_names,
+                sorted_names,
             )
             related = [{"name": r[0], "type": r[1]} for r in rel_rows]
 

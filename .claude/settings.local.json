@@ -177,7 +177,8 @@
       "Bash(awk '{print $5, $NF}')",
       "Bash(pip show *)",
       "Bash(./venv312/Scripts/python.exe -m brain_mcp --help)",
-      "mcp__brain__search_entity"
+      "mcp__brain__search_entity",
+      "mcp__brain__entity_lookup"
     ]
   },
   "enableAllProjectMcpServers": true,

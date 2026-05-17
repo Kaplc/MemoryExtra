@@ -47,10 +47,13 @@ def store(text: str, link_entities: list[str]) -> str:
 
     Args:
         text: 记忆文本（可包含多个事实）
-        link_entities: 必须，实体关联列表，每项格式「旧实体-新实体」，新实体由 LLM 总结，旧实体来自已有记忆
+        link_entities: 必须，实体关联列表，每项格式「旧实体-新实体」。
+            旧实体（Key）必须是图中已存在的实体，不存在会被跳过。
+            新实体（Value）由 LLM 从文本中总结得出。
+            例如：['用户-志远'] 表示将新实体「志远」关联到已有实体「用户」
     """
     if not link_entities or not isinstance(link_entities, list) or len(link_entities) == 0:
-        raise ValueError("link_entities 为必选参数，格式：['旧实体-新实体1', '旧实体-新实体2', ...]，例如：['用户-志远']")
+        raise ValueError("link_entities 为必选参数，格式：['旧实体-新实体']，旧实体必须已存在")
     return store_memory(text, link_entities)
 
 

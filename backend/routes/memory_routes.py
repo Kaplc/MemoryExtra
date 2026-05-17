@@ -81,6 +81,28 @@ def register(app, ready_state, logger, stats_db):
             stats_db.append_stream('store', content=text[:500], status='error', entities='')
             return jsonify({"error": "存入记忆必须关联至少一个实体，请传入 link_entities 参数"})
 
+        # 同步验证：旧实体必须存在、新实体必须不存在
+        try:
+            from modules.brain.graph import get_graph
+            graph = get_graph()
+            if graph:
+                for item in link_entities:
+                    if '-' in item:
+                        old_e, new_e = item.split('-', 1)
+                        old_e = old_e.strip()
+                        new_e = new_e.strip()
+                    else:
+                        old_e = None
+                        new_e = item.strip()
+                    if old_e:
+                        if not graph._exec("SELECT 1 FROM entity_nodes WHERE name = ?", (old_e,)):
+                            return jsonify({"error": f"旧实体「{old_e}」不存在，必须先创建或使用已有实体"})
+                    if new_e:
+                        if graph._exec("SELECT 1 FROM entity_nodes WHERE name = ?", (new_e,)):
+                            return jsonify({"error": f"新实体「{new_e}」已存在，不能重复关联，请使用新的实体名"})
+        except Exception as e:
+            logger.warning(f"[memory/mcp/store] 实体验证异常: {e}")
+
         rowid = stats_db.append_stream('store', content=text, status='pending')
 
         def _bg_store():
