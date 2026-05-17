@@ -32,13 +32,17 @@ def _call(path: str, data: dict) -> dict:
         return json.loads(resp.read())
 
 
-def store_memory(text: str) -> str:
+def store_memory(text: str, link_entities: list[str] = None) -> str:
     """存储记忆（异步后台执行），返回确认文本
 
     Args:
         text: 记忆文本
+        link_entities: 可选，从搜索结果中获取的实体名列表，用于链接新旧记忆
     """
-    result = _call("/memory/mcp/store", {"text": text})
+    data = {"text": text}
+    if link_entities:
+        data["link_entities"] = link_entities
+    result = _call("/memory/mcp/store", data)
     if "error" in result:
         raise RuntimeError(result["error"])
     # 异步模式：立即返回，实际存储在后台
@@ -67,7 +71,7 @@ def _preview_text(text: str, max_len: int = 120) -> str:
 
 
 def search_memory(query: str) -> list[dict]:
-    """搜索记忆（后端自动根据数据量选择最优策略），返回匹配的文本和分数
+    """搜索记忆，返回匹配的文本、分数和关联实体
 
     Args:
         query: 搜索关键词
@@ -75,4 +79,31 @@ def search_memory(query: str) -> list[dict]:
     result = _call("/memory/mcp/search", {"query": query})
     if "error" in result:
         raise RuntimeError(result["error"])
-    return [{"text": r["text"], "score": r.get("score", 0)} for r in result.get("results", [])]
+    return [
+        {
+            "text": r["text"],
+            "score": r.get("score", 0),
+            "entities": r.get("entities", []),
+        }
+        for r in result.get("results", [])
+    ]
+
+
+def search_entity(entity_name: str) -> dict:
+    """查询实体是否存在，返回该实体及其关联的记忆和实体
+
+    Args:
+        entity_name: 实体名称
+    """
+    result = _call("/memory/graph/entity", {"entity_name": entity_name})
+    if "error" in result:
+        raise RuntimeError(result["error"])
+    return result
+
+
+def list_entities() -> list[dict]:
+    """列出所有根实体及其关联的记忆数量"""
+    result = _call("/memory/graph/entities", {})
+    if "error" in result:
+        raise RuntimeError(result["error"])
+    return result.get("entities", [])

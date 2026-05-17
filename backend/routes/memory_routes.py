@@ -33,12 +33,21 @@ def register(app, ready_state, logger, stats_db):
         if not text:
             return jsonify({"error": "内容不能为空"})
         try:
+            link_entities = None
+            if memory_meta and isinstance(memory_meta, dict):
+                link_entities = memory_meta.get('link_entities')
+            if not link_entities or len(link_entities) == 0:
+                stats_db.append_stream('store', content=text[:500], status='error', entities='')
+                return jsonify({"error": "存入记忆必须关联至少一个实体，请传入 memory_meta.link_entities"})
+            entities_str = ','.join(link_entities)
+
             result = store_memory(text, memory_meta)
             logger.info(f"[memory/store] result={result}")
             stats_db.record_action(
                 added=result.get('added_count', 0),
                 deleted=result.get('deleted_count', 0),
             )
+            stats_db.append_stream('store', content=text[:500], status='done', entities=entities_str)
             return jsonify(result)
         except Exception as e:
             logger.error(f"[memory/store] error: {e}")
@@ -65,17 +74,25 @@ def register(app, ready_state, logger, stats_db):
     def mcp_store():
         data = request.get_json()
         text = (data or {}).get('text', '').strip()
+        link_entities = (data or {}).get('link_entities')
         if not text:
             return jsonify({"error": "内容不能为空"})
+        if not link_entities or len(link_entities) == 0:
+            stats_db.append_stream('store', content=text[:500], status='error', entities='')
+            return jsonify({"error": "存入记忆必须关联至少一个实体，请传入 link_entities 参数"})
+
         rowid = stats_db.append_stream('store', content=text, status='pending')
 
         def _bg_store():
             try:
-                result = store_memory(text, memory_meta={"source": "mcp"})
+                meta = {"source": "mcp", "link_entities": link_entities}
+                result = store_memory(text, memory_meta=meta)
                 stored = result.get("stored_texts", [])
                 if stored:
                     new_content = "\n".join(f"• {t}" for t in stored)
                     stats_db.update_stream_content(rowid, new_content)
+                entities_str = ",".join(link_entities)
+                stats_db.update_stream_entities(rowid, entities_str)
                 stats_db.record_action(
                     added=result.get('added_count', 0),
                     deleted=result.get('deleted_count', 0),
@@ -303,3 +320,35 @@ def register(app, ready_state, logger, stats_db):
         data = request.get_json() or {}
         result = update_memory_settings(data)
         return jsonify(result)
+
+    @app.route('/memory/graph/entity', methods=['POST'])
+    def graph_entity_search():
+        """查询实体是否存在，返回关联记忆和关联实体"""
+        data = request.get_json() or {}
+        entity_name = data.get('entity_name', '').strip()
+        if not entity_name:
+            return jsonify({"error": "实体名称不能为空"})
+        try:
+            from modules.brain.graph import get_graph
+            graph = get_graph()
+            if not graph:
+                return jsonify({"error": "图数据库未初始化"})
+            result = graph.search_entity(entity_name)
+            return jsonify(result)
+        except Exception as e:
+            logger.error(f"[memory/graph/entity] error: {e}")
+            return jsonify({"error": str(e)})
+
+    @app.route('/memory/graph/entities', methods=['POST'])
+    def graph_list_entities():
+        """列出所有实体及其关联记忆数量"""
+        try:
+            from modules.brain.graph import get_graph
+            graph = get_graph()
+            if not graph:
+                return jsonify({"error": "图数据库未初始化"})
+            entities = graph.list_entities()
+            return jsonify({"entities": entities})
+        except Exception as e:
+            logger.error(f"[memory/graph/entities] error: {e}")
+            return jsonify({"error": str(e)})

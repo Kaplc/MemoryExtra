@@ -195,6 +195,21 @@ def store_memory(text: str, memory_meta: dict = None) -> dict:
     stored_texts = added + updated
     msg = f"已记住: {', '.join(parts)}" if parts else "已处理"
 
+    # ── 图层：链接新记忆到实体 ──
+    try:
+        from modules.brain.graph import get_graph
+        graph = get_graph()
+        if graph:
+            link_entities = None
+            if memory_meta and isinstance(memory_meta, dict):
+                link_entities = memory_meta.get("link_entities")
+            for ev in events:
+                if ev.get("event") == "ADD" and ev.get("id"):
+                    graph.link_memory(ev["id"], ev["memory"], link_entities=link_entities)
+                    logger.info(f"[memory:graph] link_memory 调用完成 | mem0_id={ev['id'][:8]} | link_entities={link_entities}")
+    except Exception as e:
+        logger.warning(f"[graph] link_memory failed (non-fatal): {e}")
+
     return {
         "result": msg,
         "stored_texts": stored_texts,
@@ -264,6 +279,48 @@ def search_memory(query: str) -> list[dict]:
         memories.sort(key=lambda x: x["score"], reverse=True)
         memories = memories[:MIN_COUNT]
 
+    # ── 图层：实体信息 + 关联记忆扩展 ──
+    try:
+        from modules.brain.graph import get_graph
+        graph = get_graph()
+        if graph:
+            mem_ids = [m["id"] for m in memories if m.get("id")]
+            logger.info(f"[memory:graph] 开始关联记忆扩展 | 向量命中 {len(mem_ids)} 条 | query={query[:50]!r}")
+            # 附上每条记忆的关联实体
+            entity_map = graph.get_entities_for_memories(mem_ids)
+            for m in memories:
+                m["entities"] = entity_map.get(m["id"], [])
+                # 无实体记忆自动关联到根实体"用户"做兜底
+                if not m["entities"]:
+                    graph.link_if_no_entities(m["id"], m["text"])
+            logger.info(f"[memory:graph] 实体映射完成 | {len(entity_map)} 条记忆有实体关联")
+            # 图扩展找关联记忆
+            related = graph.search_related(mem_ids, max_hops=2)
+            if related:
+                seen = {m["id"] for m in memories}
+                new_related = [r for r in related if r["id"] not in seen]
+                logger.info(f"[memory:graph] 图扩展发现 {len(related)} 条关联记忆 | 其中 {len(new_related)} 条新增（非向量命中）")
+                if new_related:
+                    # 用扩展搜索获取图结果的真实语义分数
+                    expanded = client.search(
+                        query=query, filters=filters, top_k=100, threshold=0.0,
+                    )
+                    score_map = {
+                        r.get("id"): round(r.get("score", 0), 4)
+                        for r in expanded.get("results", [])
+                    }
+                    for r in new_related:
+                        r["score"] = score_map.get(r["id"], 0.1)
+                        r["source"] = "graph"
+                        r["entities"] = entity_map.get(r["id"], [])
+                        memories.append(r)
+                    logger.info(f"[memory:graph] 关联记忆追加完成 | 新增 {len(new_related)} 条 | 内容: {[(r['id'][:8], r['text'][:30]) for r in new_related]}")
+                    memories.sort(key=lambda x: x["score"], reverse=True)
+            else:
+                logger.info(f"[memory:graph] 图扩展无关联记忆 | 向量命中 {len(memories)} 条直接返回")
+    except Exception as e:
+        logger.warning(f"[graph] search enhancement failed (non-fatal): {e}")
+
     return memories
 
 
@@ -315,6 +372,16 @@ def delete_memory(memory_id: str) -> dict:
     except Exception as e:
         logger.warning(f"[delete_memory] get text failed for {memory_id}: {e}")
     client.delete(memory_id)
+
+    # ── 图层：清理节点和边 ──
+    try:
+        from modules.brain.graph import get_graph
+        graph = get_graph()
+        if graph:
+            graph.delete_memory(memory_id)
+    except Exception as e:
+        logger.warning(f"[graph] delete_memory failed (non-fatal): {e}")
+
     global _memory_count_cache
     if _memory_count_cache is not None:
         _memory_count_cache = max(0, _memory_count_cache - 1)
