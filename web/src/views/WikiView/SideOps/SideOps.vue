@@ -9,7 +9,11 @@ import { wikiViewModel } from '../WikiViewModel'
       <div class="ops-list">
         <button class="ops-btn" :disabled="wikiViewModel.showProgress.value" @click="wikiViewModel.rebuildIndex()">
           <span class="ops-icon">&#x21bb;</span>
-          <span class="ops-text">{{ wikiViewModel.showProgress.value ? '索引中...' : '重建索引' }}</span>
+          <span class="ops-text">{{ wikiViewModel.showProgress.value ? '索引中...' : '增量索引' }}</span>
+        </button>
+        <button class="ops-btn ops-btn-warning" :disabled="wikiViewModel.showProgress.value" @click="wikiViewModel.rebuildIndexFull()">
+          <span class="ops-icon">&#x26a1;</span>
+          <span class="ops-text">{{ wikiViewModel.showProgress.value ? '索引中...' : '全量重建' }}</span>
         </button>
       </div>
       <div
@@ -78,6 +82,14 @@ import { wikiViewModel } from '../WikiViewModel'
 .ops-btn:disabled {
   opacity: 0.4;
   cursor: not-allowed;
+}
+.ops-btn-warning {
+  border-color: #f9731633;
+}
+.ops-btn-warning:hover {
+  background: #1e293b;
+  color: #fb923c;
+  border-color: #f9731666;
 }
 .ops-icon {
   font-size: 16px;

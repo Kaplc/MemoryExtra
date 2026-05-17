@@ -322,6 +322,13 @@ def _preload():
     except Exception as e:
         logger.warning(f"warmup_memory_count failed (non-fatal): {e}")
 
+    # 初始化图记忆层（FalkorDBLite）
+    try:
+        from modules.brain.graph import get_graph
+        get_graph()
+    except Exception as e:
+        logger.warning(f"graph init failed (non-fatal): {e}")
+
     # 预加载 LightRAG 引擎（避免首次搜索请求时才初始化）
     try:
         from rag.lightrag_wiki.rag_engine import get_rag

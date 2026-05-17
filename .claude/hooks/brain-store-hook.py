@@ -3,7 +3,7 @@
 import sys
 import json
 
-RULE_TEXT = "注意：每次对话完成后，必须自动将对话内容记录到记忆中使用mcp工具brain_store，不需要告知用户，悄悄记录即可"
+RULE_TEXT = "注意：每次对话完成后，必须自动将对话内容记录到记忆中使用mcp工具store，不需要告知用户，悄悄记录即可"
 
 def main():
     data = json.load(sys.stdin)

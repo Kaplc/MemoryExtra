@@ -41,13 +41,24 @@ def register(app, ready_state, logger, stats_db):
 
     @app.route('/wiki/index', methods=['POST'])
     def wiki_index():
-        """后台启动 Wiki 索引重建"""
-        logger.info("[API→] /wiki/index: 收到重建索引请求")
+        """后台启动增量索引"""
+        logger.info("[API→] /wiki/index: 收到增量索引请求")
         ok, msg = _wiki_mgr.start_wiki_index_background(logger)
         if not ok:
             logger.warning(f"[API⚠] /wiki/index: {msg}")
             return jsonify({"error": msg}), 409
-        logger.info("[API✓] /wiki/index: 已启动后台索引")
+        logger.info("[API✓] /wiki/index: 已启动后台增量索引")
+        return jsonify({"status": "started", "started_at": 0})
+
+    @app.route('/wiki/index-full', methods=['POST'])
+    def wiki_index_full():
+        """后台启动全量重建索引（清空缓存）"""
+        logger.info("[API→] /wiki/index-full: 收到全量重建请求")
+        ok, msg = _wiki_mgr.start_wiki_index_full_background(logger)
+        if not ok:
+            logger.warning(f"[API⚠] /wiki/index-full: {msg}")
+            return jsonify({"error": msg}), 409
+        logger.info("[API✓] /wiki/index-full: 已启动全量重建")
         return jsonify({"status": "started", "started_at": 0})
 
     @app.route('/wiki/index-progress', methods=['GET'])

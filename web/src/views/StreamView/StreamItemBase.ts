@@ -28,6 +28,13 @@ export abstract class StreamItemBase {
     return ''
   }
 
+  /* entityTags：解析逗号分隔的实体名列表 */
+  get entityTags(): string[] {
+    const e = this.data.entities
+    if (!e) return []
+    return e.split(',').filter(Boolean)
+  }
+
   abstract get actionLabel(): string
   abstract get dotClass(): string
   abstract get labelClass(): string

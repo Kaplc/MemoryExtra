@@ -55,6 +55,7 @@ export class WikiViewModel {
   private _pollTimer: ReturnType<typeof setInterval> | null = null
   private _lastDone = -1
   private _pendingRelPath: string | null = null
+  private _lastCurrentFile = ''
 
   /* ==================== Computed ==================== */
 
@@ -180,21 +181,17 @@ export class WikiViewModel {
    * 流程：标准化路径分隔符（Windows \ → /）→ 清除所有 isCurrent → 找到匹配文件 → 标记 synced
    */
   private _advanceProgress(done: number, total: number, currentRelPath: string): void {
-    console.log(`[WikiView] _advanceProgress: done=${done}/${total} current=${currentRelPath}`)
     // 标准化路径分隔符（Windows \ → /）
     const normalizedPath = currentRelPath.replace(/\\/g, '/')
     this.rawFiles.value.forEach(f => f.isCurrent = false)
     this._pendingRelPath = normalizedPath
-    const item = this.rawFiles.value.find(f => {
-      const fp = f.rel_path.replace(/\\/g, '/')
-      return fp === normalizedPath || fp.endsWith(normalizedPath) || normalizedPath.endsWith(fp)
-    })
+    const item = this.rawFiles.value.find(f => f.rel_path.replace(/\\/g, '/') === normalizedPath)
     if (item) {
       item.markCurrent()
       item.markSynced()
-      console.log(`[WikiView] _advanceProgress: 已标记 ${currentRelPath} 为 synced（done=${done}/${total}）`)
-    } else {
-      console.warn(`[WikiView] _advanceProgress: 未找到 currentRelPath=${currentRelPath}（共 ${this.rawFiles.value.length} 个文件）`)
+      this.rawFiles.value = [...this.rawFiles.value]
+    } else if (currentRelPath) {
+      console.warn(`[WikiView] _advanceProgress: 未找到 ${currentRelPath}`)
     }
   }
 
@@ -297,7 +294,7 @@ export class WikiViewModel {
     this.progressPctNum.value = pct
     this.progressPct.value = pct + '%'
     this.progressLabel.value = (pdata.current_file || '进行中...') + ' (' + pdata.done + '/' + pdata.total + ')'
-    this._lastDone = pdata.done
+    this._lastDone = pdata.done  // 同步 lastDone，确保轮询时 done 从 0 变化能触发 _advanceProgress
   }
 
   /* applyDone：应用索引完成状态
@@ -343,18 +340,21 @@ export class WikiViewModel {
         const pdata = await this._api.fetchJson<{ status: string; done: number; total: number; current_file: string }>('/wiki/index-progress')
         if (pdata.status === 'running') {
           this.applyProgress(pdata)
-          if (pdata.done !== this._lastDone) {
-            this._lastDone = pdata.done
-            // 直接更新文件状态，不重新拉整个列表
-            const relPath = pdata.current_file || this._pendingRelPath || ''
-            console.log(`[WikiView] startPoll: done=${pdata.done}/${pdata.total} current_file=${pdata.current_file} → 调用 _advanceProgress`)
-            this._advanceProgress(pdata.done, pdata.total, relPath)
-          }
+          this._lastDone = pdata.done
+          if (pdata.current_file) this._lastCurrentFile = pdata.current_file
+          const relPath = pdata.current_file || this._pendingRelPath || ''
+          this._advanceProgress(pdata.done, pdata.total, relPath)
         } else {
-          console.log('[WikiView] startPoll: status != running，停止轮询')
+          // 索引完成时，用 running 阶段记录的 _lastCurrentFile 标记最后一个文件
+          if (this._lastCurrentFile) {
+            this._advanceProgress(pdata.done, pdata.total, this._lastCurrentFile)
+          }
+          this._lastCurrentFile = ''
           this._lastDone = -1
           this.stopPoll()
           this.applyDone(pdata)
+          // 索引完成后重新加载文件列表，确保所有文件状态（包括轮询跳过的快速文件）与后端一致
+          this.loadFiles()
         }
       } catch (e) {
         console.error('[WikiView] poll error:', e)
@@ -376,26 +376,35 @@ export class WikiViewModel {
    * 流程：重置进度状态 → POST /wiki/index → 启动轮询跟踪进度
    */
   async rebuildIndex(): Promise<void> {
-    console.log('[WikiView] rebuildIndex: 开始')
+    await this._doRebuild('/wiki/index', '增量索引')
+  }
+
+  /* rebuildIndexFull：全量重建（清空缓存后重新索引） */
+  async rebuildIndexFull(): Promise<void> {
+    await this._doRebuild('/wiki/index-full', '全量重建')
+  }
+
+  private async _doRebuild(url: string, label: string): Promise<void> {
+    console.log(`[WikiView] ${label}: 开始`)
     this.indexResultMsg.value = null
     this.showProgress.value = true
     this.progressPctNum.value = 0
     this.progressPct.value = '0%'
     this.progressLabel.value = '准备中...'
-    this._lastDone = 0
+    this._lastDone = -1
 
     try {
-      const resp = await this._api.postJson<any>('/wiki/index', {})
+      const resp = await this._api.postJson<any>(url, {})
       if (resp.error) {
-        console.error('[WikiView] rebuildIndex: 后端返回错误', resp.error)
+        console.error(`[WikiView] ${label}: 后端返回错误`, resp.error)
         this.showProgress.value = false
-        this.indexResultMsg.value = { type: 'err', text: '索引失败: ' + resp.error }
+        this.indexResultMsg.value = { type: 'err', text: label + '失败: ' + resp.error }
         return
       }
-      console.log('[WikiView] rebuildIndex: 后端已启动索引，开始轮询')
+      console.log(`[WikiView] ${label}: 后端已启动，开始轮询`)
       this.startPoll()
     } catch (e: any) {
-      console.error('[WikiView] rebuildIndex: 请求异常', e)
+      console.error(`[WikiView] ${label}: 请求异常`, e)
       this.showProgress.value = false
       this.indexResultMsg.value = { type: 'err', text: '请求失败: ' + (e.message || String(e)) }
     }

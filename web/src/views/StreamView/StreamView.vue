@@ -1,6 +1,9 @@
 <script setup lang="ts">
 import { onMounted, onUnmounted, ref } from 'vue'
 import { streamViewModel } from './StreamViewModel'
+import StoreStreamItem from './StoreStreamItem.vue'
+import SearchStreamItem from './SearchStreamItem.vue'
+import DeleteStreamItem from './DeleteStreamItem.vue'
 
 onMounted(() => streamViewModel.onMounted())
 onUnmounted(() => streamViewModel.onUnmounted())
@@ -18,6 +21,13 @@ function toggleExpand(id: number) {
 
 function isExpanded(id: number): boolean {
   return expandedIds.value.has(id)
+}
+
+function getItemComponent(action: string) {
+  if (action === 'store') return StoreStreamItem
+  if (action === 'search') return SearchStreamItem
+  if (action === 'delete') return DeleteStreamItem
+  return StoreStreamItem
 }
 </script>
 
@@ -47,43 +57,15 @@ function isExpanded(id: number): boolean {
             {{ stream.emptyText }}
           </div>
 
-          <div
+          <component
+            :is="getItemComponent(item.action)"
             v-for="item in stream.items.value"
             :key="item.id"
-            :data-id="item.id"
-            class="steam-item"
-            :class="{ new: streamViewModel.isNew(item.id) }"
-          >
-            <div class="steam-dot" :class="item.dotClass"></div>
-
-            <div class="steam-body">
-              <span class="steam-action-label" :class="item.labelClass">{{ item.actionLabel }}</span>
-              <span
-                class="steam-text"
-                :class="{ 'steam-text--expanded': isExpanded(item.id) }"
-              >{{ item.displayText }}</span>
-
-              <!-- 展开/折叠箭头 -->
-              <button
-                class="steam-expand-btn"
-                :class="{ 'steam-expand-btn--open': isExpanded(item.id) }"
-                @click.stop="toggleExpand(item.id)"
-              >▶</button>
-
-              <!-- 状态图标 -->
-              <div v-if="item.statusIcon === 'pending'" class="steam-status-icon">
-                <div class="steam-spinner"></div>
-              </div>
-              <div v-else-if="item.statusIcon === 'done'" class="steam-status-icon">
-                <span class="steam-check">&#10003;</span>
-              </div>
-              <div v-else-if="item.statusIcon === 'error'" class="steam-status-icon">
-                <span class="steam-error">&#10007;</span>
-              </div>
-            </div>
-
-            <div class="steam-time">{{ item.displayTime }}</div>
-          </div>
+            :item="item"
+            :is-expanded="isExpanded(item.id)"
+            :is-new="streamViewModel.isNew(item.id)"
+            @toggle="toggleExpand"
+          />
         </div>
       </div>
     </div>
@@ -177,157 +159,10 @@ function isExpanded(id: number): boolean {
   height: 100%;
 }
 
-.steam-item {
-  display: flex;
-  align-items: flex-start;
-  gap: 10px;
-  background: #1a1d27;
-  border: 1px solid #2d3149;
-  border-radius: 8px;
-  padding: 10px 14px;
-  font-size: 12px;
-  color: #94a3b8;
-}
-
-.steam-item.new {
-  animation: slideIn 0.3s ease-out both;
-}
-
-@keyframes slideIn {
-  from {
-    opacity: 0;
-    transform: translateY(-12px);
-    max-height: 0;
-    padding-top: 0;
-    padding-bottom: 0;
-    border-width: 0;
-    margin-bottom: -6px;
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-    max-height: 200px;
-    padding-top: 10px;
-    padding-bottom: 10px;
-    border-width: 1px;
-    margin-bottom: 6px;
-  }
-}
-
-.steam-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  flex-shrink: 0;
-  margin-top: 4px;
-}
-
-.steam-dot.store  { background: #22c55e; box-shadow: 0 0 6px #22c55e66; }
-.steam-dot.search { background: #3b82f6; box-shadow: 0 0 6px #3b82f666; }
-.steam-dot.delete { background: #ef4444; box-shadow: 0 0 6px #ef444466; }
-
-.steam-body {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  display: flex;
-  gap: 8px;
-  align-items: flex-start;
-}
-
-.steam-action-label {
-  font-weight: 600;
-  color: #a78bfa;
-  flex-shrink: 0;
-}
-
-.steam-action-label.delete-label { color: #f87171; }
-
-/* 默认单行截断 */
-.steam-text {
-  color: #cbd5e1;
-  line-height: 1.5;
-  flex: 1;
-  min-width: 0;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-/* 展开后全文显示 */
-.steam-text--expanded {
-  white-space: pre-wrap;
-  word-break: break-word;
-  overflow: visible;
-}
-
-/* 展开箭头按钮 */
-.steam-expand-btn {
-  background: none;
-  border: none;
-  cursor: pointer;
-  color: #475569;
-  font-size: 9px;
-  padding: 0;
-  flex-shrink: 0;
-  line-height: 1;
-  margin-top: 3px;
-  transform: rotate(0deg);
-  transition: transform 0.2s ease, color 0.2s ease;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 14px;
-  height: 14px;
-}
-
-.steam-expand-btn:hover {
-  color: #94a3b8;
-}
-
-.steam-expand-btn--open {
-  transform: rotate(90deg);
-  color: #a78bfa;
-}
-
-.steam-time {
-  font-size: 10px;
-  color: #475569;
-  white-space: nowrap;
-  flex-shrink: 0;
-  margin-top: 2px;
-}
-
 .steam-empty {
   text-align: center;
   color: #475569;
   padding: 40px 0;
   font-size: 13px;
 }
-
-.steam-status-icon {
-  width: 16px;
-  height: 16px;
-  flex-shrink: 0;
-  margin-top: 2px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.steam-spinner {
-  width: 14px;
-  height: 14px;
-  border: 2px solid #475569;
-  border-top-color: #a78bfa;
-  border-radius: 50%;
-  animation: steamSpin 0.8s linear infinite;
-}
-
-@keyframes steamSpin {
-  to { transform: rotate(360deg); }
-}
-
-.steam-check { font-size: 13px; font-weight: 700; color: #22c55e; }
-.steam-error { font-size: 12px; font-weight: 700; color: #ef4444; }
 </style>

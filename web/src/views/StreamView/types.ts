@@ -10,6 +10,7 @@ export interface StreamItemData {
   memory_id: string | null
   status: 'pending' | 'done' | 'error' | ''
   created_at: string
+  entities?: string  // 逗号分隔的实体名列表
 }
 
 export interface StreamResponse {

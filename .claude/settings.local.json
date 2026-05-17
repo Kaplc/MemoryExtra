@@ -159,11 +159,31 @@
       "Bash(git push:*)",
       "Bash(findstr \"LISTEN\")",
       "Bash(findstr \":7\")",
-      "Bash(findstr \"python flask\")"
+      "Bash(findstr \"python flask\")",
+      "mcp__MiniMax__web_search",
+      "mcp__zread__get_repo_structure",
+      "mcp__zread__read_file",
+      "Bash(E:/Project/AiBrain/venv312/Scripts/python *)",
+      "Bash(npx playwright *)",
+      "Bash(node tests/stream-screenshot.js)",
+      "Bash(dir stream-view-screenshot.png)",
+      "mcp__MiniMax__understand_image",
+      "Bash(del \"E:\\\\Project\\\\AiBrain\\\\rag\\\\lightrag_data\\\\.wiki_index_meta.json\")",
+      "Bash(timeout 20 node tests/wiki-meta-file-e2e.spec.js)",
+      "Bash(timeout 60 node tests/wiki-meta-file-e2e.spec.js)",
+      "Bash(node tests/wiki-meta-file-e2e.spec.js)",
+      "Bash(npm run *)",
+      "Bash(node tests/wiki-reindex-after-delete.spec.js)",
+      "Bash(awk '{print $5, $NF}')",
+      "Bash(pip show *)",
+      "Bash(./venv312/Scripts/python.exe -m brain_mcp --help)",
+      "mcp__brain__search_entity"
     ]
   },
   "enableAllProjectMcpServers": true,
   "enabledMcpjsonServers": [
-    "qdrant-memory"
+    "qdrant-memory",
+    "brain",
+    "wiki"
   ]
 }

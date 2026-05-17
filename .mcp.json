@@ -12,30 +12,6 @@
       },
       "disabled": false
     },
-    "eye": {
-      "type": "stdio",
-      "command": "./venv312/Scripts/python.exe",
-      "args": [
-        "-m",
-        "mcp_servers.eye_mcp.server"
-      ],
-      "env": {
-        "PYTHONPATH": "."
-      },
-      "disabled": true
-    },
-    "computer": {
-      "type": "stdio",
-      "command": "./venv312/Scripts/python.exe",
-      "args": [
-        "-m",
-        "mcp_servers.computer_mcp.server"
-      ],
-      "env": {
-        "PYTHONPATH": "."
-      },
-      "disabled": true
-    },
     "wiki": {
       "type": "stdio",
       "command": "./venv312/Scripts/python.exe",
@@ -47,14 +23,6 @@
         "PYTHONPATH": "."
       },
       "disabled": false
-    },
-     "企业微信文档":{
-      "type":"streamable-http",
-      "url":"https://qyapi.weixin.qq.com/mcp/robot-doc?apikey=YuaMuBkftQeFaxno0UmfazLTNAt9YN_bJGWZGeFQF5FrxH3fStTDHjXzJWh-COQC1caPRTLk-DqGDYTdvcf2ug"
     }
-  },
-  "disabledMcpServers": [
-    "computer",
-    "eye"
-  ]
+  }
 }

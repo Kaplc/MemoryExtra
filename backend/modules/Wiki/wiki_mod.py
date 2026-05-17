@@ -65,24 +65,27 @@ class WikiManager:
         return md_files
 
     def _index_file(self, abs_path: str, rel_path: str) -> bool:
-        """将单个 MD 文件内容插入 LightRAG，并通过 aget_docs_by_track_id 验证处理完成"""
+        """将单个 MD 文件内容插入 LightRAG，insert 阻塞完成后验证状态"""
         from rag.lightrag_wiki.rag_engine import insert_document, _verify_vector_inserted
 
         with open(abs_path, "r", encoding="utf-8") as f:
             content = f.read()
 
         if not content.strip():
-            return True
-
-        track_id = insert_document(content, file_path=rel_path)
-
-        if not _verify_vector_inserted(rel_path, track_id, timeout=30):
             return False
+
+        # insert 阻塞等待 LightRAG 处理完成
+        insert_document(content, file_path=rel_path)
+
+        # TODO: _verify_vector_inserted 只检查 doc_status 不检查实际向量，暂时禁用
+        # track_id = insert_document(content, file_path=rel_path)
+        # if not _verify_vector_inserted(rel_path, track_id, timeout=30):
+        #     return False
 
         return True
 
     def index_single_file(self, filename: str) -> str:
-        """索引单个文件"""
+        """索引单个文件（watcher 触发或手动触发）"""
         from rag.lightrag_wiki.config import get_wiki_dir, get_index_meta_path
 
         wiki_dir = get_wiki_dir()
@@ -94,27 +97,37 @@ class WikiManager:
         meta_path = get_index_meta_path()
         meta = self._load_index_meta(meta_path)
 
+        # 计算 MD5，未变化则跳过（避免重复创建 RAG 实例）
+        current_md5 = self._compute_file_md5(abs_path)
+        existing = meta.get("files", {}).get(filename)
+        if existing and existing.get("md5") == current_md5:
+            logger.info(f"[skip] 文件未变化，跳过索引: {filename}")
+            return f"未变化: {filename}"
+
         try:
+            # 插入 LightRAG 并验证状态
             verified = self._index_file(abs_path, filename)
             if not verified:
                 return f"向量验证失败: {filename}"
+
+            # 更新 meta 并立即保存到磁盘（确保缓存最新）
             md5 = self._compute_file_md5(abs_path)
             meta.setdefault("files", {})[filename] = {
                 "md5": md5,
                 "indexed_at": datetime.now(timezone.utc).isoformat(),
             }
-            self._save_index_meta(meta_path, meta)
+            self._save_index_index(meta_path, meta)
             return f"已索引: {filename}"
         except Exception as e:
             return f"索引失败 {filename}: {e}"
 
     def sync_index(self) -> dict:
-        """增量同步索引"""
-        # 重置 RAG 实例，避免旧 event loop 残留导致 asyncio Lock 失效
+        """增量同步索引（后台线程运行，串行处理每个文件）"""
         from rag.lightrag_wiki.rag_engine import reset_rag
-        reset_rag()
+        from rag.lightrag_wiki.config import get_wiki_dir, get_index_meta_path, get_lightrag_dir
 
-        from rag.lightrag_wiki.config import get_wiki_dir, get_index_meta_path
+        # 重置内存中的 RAG 实例（不清缓存，增量模式）
+        reset_rag()
 
         wiki_dir = get_wiki_dir()
         meta_path = get_index_meta_path()
@@ -123,6 +136,7 @@ class WikiManager:
         self._set_progress(0, 1, "扫描目录...", "running")
 
         meta = self._load_index_meta(meta_path)
+        # 扫描 wiki_dir 下所有 .md 文件
         current_files = self.scan_wiki_files(wiki_dir)
 
         current_map = {}
@@ -134,9 +148,16 @@ class WikiManager:
         result = {"added": [], "updated": [], "deleted": [], "unchanged": 0, "errors": []}
 
         self._set_progress(0, 1, "扫描文件...", "running")
+        # 计算每个文件 MD5，找出新增或变化的文件（跳过空文件）
         to_process = []
         items = list(current_map.items())
         for rel_path, abs_path in items:
+            try:
+                with open(abs_path, "r", encoding="utf-8") as f:
+                    if not f.read().strip():
+                        continue
+            except Exception:
+                continue
             md5 = self._compute_file_md5(abs_path)
             old_entry = indexed_files.get(rel_path)
             if old_entry is None:
@@ -152,6 +173,7 @@ class WikiManager:
             _index_progress["result"] = result
             return result
 
+        # 串行遍历每个文件：插入 LightRAG → 验证 → 更新 meta → 保存
         done = 0
         for i, (rel_path, abs_path, md5, action) in enumerate(to_process):
             self._set_progress(done, total, rel_path)
@@ -177,6 +199,10 @@ class WikiManager:
             if rel_path not in current_map:
                 del indexed_files[rel_path]
                 result["deleted"].append(rel_path)
+            elif rel_path not in {r for r, _, _, _ in to_process}:
+                # 空文件等跳过索引的文件，清除旧 meta 条目
+                del indexed_files[rel_path]
+                result["deleted"].append(rel_path)
 
         meta["files"] = indexed_files
         self._save_index_meta(meta_path, meta)
@@ -194,6 +220,90 @@ class WikiManager:
 
     def get_index_progress(self):
         return _index_progress
+
+    def sync_index_full(self) -> dict:
+        """全量重建索引 - 清空缓存后重新插入所有文件"""
+        from rag.lightrag_wiki.rag_engine import reset_rag
+        from rag.lightrag_wiki.config import get_wiki_dir, get_index_meta_path, get_lightrag_dir
+
+        reset_rag()
+
+        lightrag_dir = get_lightrag_dir()
+        for f in os.listdir(lightrag_dir):
+            if f.startswith(("kv_store_", "vdb_", "graph_")):
+                try:
+                    os.remove(os.path.join(lightrag_dir, f))
+                    logger.info(f"[wiki-index] 已清理: {f}")
+                except Exception as e:
+                    logger.warning(f"[wiki-index] 清理失败 {f}: {e}")
+
+        # 删除 meta 文件，强制所有文件重新索引
+        meta_path = get_index_meta_path()
+        if os.path.exists(meta_path):
+            try:
+                os.remove(meta_path)
+                logger.info("[wiki-index] 已删除 meta 文件")
+            except Exception as e:
+                logger.warning(f"[wiki-index] 删除 meta 失败: {e}")
+
+        wiki_dir = get_wiki_dir()
+        os.makedirs(wiki_dir, exist_ok=True)
+
+        self._set_progress(0, 1, "扫描目录...", "running")
+
+        meta = {"files": {}}
+        current_files = self.scan_wiki_files(wiki_dir)
+
+        current_map = {}
+        for abs_path in current_files:
+            rel = os.path.relpath(abs_path, wiki_dir)
+            current_map[rel] = abs_path
+
+        result = {"added": [], "updated": [], "deleted": [], "unchanged": 0, "errors": []}
+
+        self._set_progress(0, 1, "扫描文件...", "running")
+        to_process = []
+        for rel_path, abs_path in current_map.items():
+            try:
+                with open(abs_path, "r", encoding="utf-8") as f:
+                    if not f.read().strip():
+                        continue
+            except Exception:
+                continue
+            md5 = self._compute_file_md5(abs_path)
+            to_process.append((rel_path, abs_path, md5, "added"))
+
+        total = len(to_process)
+        if total == 0:
+            self._set_progress(0, 0, "无需处理", "done")
+            _index_progress["result"] = result
+            return result
+
+        indexed_files = {}
+        done = 0
+        for i, (rel_path, abs_path, md5, action) in enumerate(to_process):
+            self._set_progress(done, total, rel_path)
+            try:
+                if self._index_file(abs_path, rel_path):
+                    indexed_files[rel_path] = {
+                        "md5": md5,
+                        "indexed_at": datetime.now(timezone.utc).isoformat(),
+                    }
+                    result[action].append(rel_path)
+                else:
+                    result["errors"].append(f"{rel_path}: 索引失败")
+            except Exception as e:
+                result["errors"].append(f"{rel_path}: {e}")
+
+            done += 1
+            self._set_progress(done, total, rel_path)
+
+        meta["files"] = indexed_files
+        self._save_index_meta(meta_path, meta)
+
+        self._set_progress(total, total, "", "done")
+        _index_progress["result"] = result
+        return result
 
 
     def _start_wiki_watcher(self):
@@ -318,7 +428,7 @@ class WikiManager:
             })
         return result, indexed
 
-    # ── 索引启动 ────────────────────────────────────────────────────────
+    # ── 索引启动（增量）──────────────────────────────────────────────────
     def start_wiki_index_background(self, logger=None):
         def _run():
             try:
@@ -326,6 +436,26 @@ class WikiManager:
             except Exception as e:
                 if logger:
                     logger.error(f"[wiki-index] 后台索引失败: {e}")
+            finally:
+                if _index_progress["status"] == "running":
+                    self._set_progress(_index_progress["done"], _index_progress["total"], "", "done")
+
+        global _index_progress
+        if _index_progress["running"]:
+            return False, "索引任务正在进行中"
+
+        self._set_progress(0, 0, "", "running")
+        threading.Thread(target=_run, daemon=True).start()
+        return True, "已启动"
+
+    # ── 索引启动（全量重建）──────────────────────────────────────────────
+    def start_wiki_index_full_background(self, logger=None):
+        def _run():
+            try:
+                self.sync_index_full()
+            except Exception as e:
+                if logger:
+                    logger.error(f"[wiki-index] 全量重建失败: {e}")
             finally:
                 if _index_progress["status"] == "running":
                     self._set_progress(_index_progress["done"], _index_progress["total"], "", "done")

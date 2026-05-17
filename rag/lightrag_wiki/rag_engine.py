@@ -9,7 +9,6 @@ import asyncio
 import logging
 import functools
 import re
-import threading
 import numpy as np
 
 # 强制离线，防止 LightRAG/fastembed 联网检查模型更新
@@ -19,26 +18,18 @@ os.environ["TRANSFORMERS_OFFLINE"] = "1"
 logger = logging.getLogger(__name__)
 
 _rag_instance = None
-_rag_lock = threading.Lock()  # 全局锁：防止并发查询导致 LightRAG 死锁
-
-
-def _run_async(coro):
-    """在同步上下文中运行异步协程（每次创建新event loop避免锁冲突）"""
-    import concurrent.futures
-    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
-        return pool.submit(asyncio.run, coro).result(timeout=30)
 
 
 def _run_async_with_timeout(coro, timeout=30):
     """运行异步协程，带超时保护"""
-    import concurrent.futures
-    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
-        future = pool.submit(asyncio.run, coro)
-        try:
-            return future.result(timeout=timeout)
-        except concurrent.futures.TimeoutError:
-            future.cancel()
-            raise TimeoutError(f"异步操作超时({timeout}s)")
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    try:
+        return loop.run_until_complete(asyncio.wait_for(coro, timeout=timeout))
+    except asyncio.TimeoutError:
+        raise TimeoutError(f"异步操作超时({timeout}s)")
+    finally:
+        loop.close()
 
 
 
@@ -289,8 +280,8 @@ def _create_rag():
 
 
 def insert_document(text: str, file_path: str | None = None) -> str:
-    """插入文档到 LightRAG 索引（每个文档创建独立 RAG 实例，避免跨事件循环锁问题）"""
-    rag = _create_rag()
+    """插入文档到 LightRAG 索引（复用单例，线程安全）"""
+    rag = get_rag()
     kwargs = {"input": text}
     if file_path:
         kwargs["file_paths"] = file_path
@@ -298,11 +289,7 @@ def insert_document(text: str, file_path: str | None = None) -> str:
 
 
 def query_wiki_context(question: str, mode: str = "hybrid") -> str:
-    """查询 wiki，仅返回检索到的上下文（不经过 LLM 生成）
-
-    每个查询创建独立 RAG 实例，彻底避免 LightRAG 线程安全问题导致卡死
-    （LightRAG query() 存在单实例多次调用后永久阻塞的已知问题）
-    """
+    """查询 wiki，仅返回检索到的上下文（不经过 LLM 生成）"""
     import time as _t
     t_start = _t.time()
     logger.info(f"[TRACE] query_wiki_context 开始 | question={question[:50]} mode={mode}")
@@ -315,73 +302,44 @@ def query_wiki_context(question: str, mode: str = "hybrid") -> str:
 
     param = QueryParam(mode=mode, only_need_context=True)
 
-    # === 每个查询创建独立 RAG 实例（避免 LightRAG 卡死问题）===
-    t0 = _t.time()
-    rag = _create_rag()
-    t_rag = _t.time() - t0
-    logger.info(f"[TRACE] _create_rag() 耗时 {t_rag:.2f}s (独立实例)")
-
+    rag = get_rag()
     t1 = _t.time()
     result = rag.query(question, param=param)
     t_query = _t.time() - t1
     total = _t.time() - t_start
     logger.info(
         f"[TRACE] query_wiki_context 完成 | mode={mode} "
-        f"rag_init={t_rag:.2f}s query={t_query:.2f}s total={total:.2f}s result_len={len(result) if result else 0}"
+        f"query={t_query:.2f}s total={total:.2f}s result_len={len(result) if result else 0}"
     )
     return result
 
 
 def _verify_vector_inserted(rel_path: str, track_id: str, timeout: int = 30) -> bool:
-    """验证文件是否已处理完成（异步轮询直到 status=processed 或超时）
-
-    insert_document() 是异步入队接口，LightRAG 后台线程处理完成后
-    会更新 doc_status 存储。本函数通过 aget_docs_by_track_id() 轮询
-    文档状态，等待其变为 'processed'。
-
-    Args:
-        rel_path: 文件相对路径（如 "project/xxx.md"），用于日志
-        track_id: insert_document() 返回的追踪 ID
-        timeout: 超时秒数，默认 30 秒
-
-    Returns:
-        True: 文档已处理完成，False: 超时或失败
-    """
-    import time as _time
+    """验证文件是否已处理完成（insert 阻塞返回后直接查询状态）"""
     rag = get_rag()
 
-    async def _wait_for_processed(tid: str, tout: int) -> bool:
-        deadline = _time.time() + tout
-        while _time.time() < deadline:
-            try:
-                result = await rag.aget_docs_by_track_id(tid)
-                for doc_id, doc_status in result.items():
-                    status = doc_status.status if hasattr(doc_status, 'status') else str(doc_status.status)
-                    if status == 'processed':
-                        logger.info(f"[verify✓] 文档处理完成 | track_id={tid} doc_id={doc_id}")
-                        return True
-                    elif status == 'failed':
-                        em = getattr(doc_status, 'error_msg', 'unknown')
-                        # "Content already exists" 意味着文档之前已成功处理，不算真正失败
-                        if 'Content already exists' in em:
-                            logger.info(f"[verify✓] 文档已存在（之前已索引）| track_id={tid} doc_id={doc_id}")
-                            return True
-                        logger.error(f"[verify✗] 文档处理失败 | track_id={tid} error={em}")
-                        return False
-                    else:
-                        logger.info(f"[verify] 等待处理中 | track_id={tid} status={status}")
-                await asyncio.sleep(0.5)
-            except Exception as e:
-                logger.warning(f"[verify] 轮询异常: {e}，重试")
-                await asyncio.sleep(1)
-        logger.warning(f"[verify✗] 验证超时 | track_id={tid}")
+    async def _check_once(tid: str) -> bool:
+        result = await rag.aget_docs_by_track_id(tid)
+        for doc_id, doc_status in result.items():
+            status = doc_status.status if hasattr(doc_status, 'status') else str(doc_status.status)
+            if status == 'processed':
+                logger.info(f"[verify✓] 文档处理完成 | track_id={tid} doc_id={doc_id}")
+                return True
+            elif status == 'failed':
+                em = getattr(doc_status, 'error_msg', 'unknown')
+                if 'Content already exists' in em:
+                    logger.info(f"[verify✓] 文档已存在（之前已索引）| track_id={tid} doc_id={doc_id}")
+                    return True
+                logger.error(f"[verify✗] 文档处理失败 | track_id={tid} error={em}")
+                return False
+        logger.error(f"[verify✗] 未找到文档状态 | track_id={tid}")
         return False
 
     try:
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
         try:
-            return loop.run_until_complete(_wait_for_processed(track_id, timeout))
+            return loop.run_until_complete(_check_once(track_id))
         finally:
             loop.close()
     except Exception as e:

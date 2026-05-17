@@ -49,12 +49,18 @@ class StatsDB:
                 content TEXT,
                 memory_id TEXT,
                 created_at TEXT DEFAULT (datetime('now','localtime')),
-                status TEXT DEFAULT 'done'
+                status TEXT DEFAULT 'done',
+                entities TEXT DEFAULT ''
             )
         ''')
         # 迁移：给已有的 stream 表添加 status 列
         try:
             db.execute('ALTER TABLE stream ADD COLUMN status TEXT DEFAULT "done"')
+        except Exception:
+            pass  # 列已存在则忽略
+        # 迁移：给已有的 stream 表添加 entities 列
+        try:
+            db.execute('ALTER TABLE stream ADD COLUMN entities TEXT DEFAULT ""')
         except Exception:
             pass  # 列已存在则忽略
         db.execute('CREATE INDEX IF NOT EXISTS idx_stream_time ON stream(created_at DESC)')
@@ -137,12 +143,12 @@ class StatsDB:
 
     # ── Stream（操作流）─────────────────────────────────────
 
-    def append_stream(self, action, content='', memory_id='', status='done'):
+    def append_stream(self, action, content='', memory_id='', status='done', entities=''):
         """写入一条操作流记录（如 store/update/delete），自动裁剪旧记录"""
         db = self._get_conn()
         db.execute(
-            'INSERT INTO stream (action, content, memory_id, status) VALUES (?, ?, ?, ?)',
-            (action, content[:500], memory_id, status)
+            'INSERT INTO stream (action, content, memory_id, status, entities) VALUES (?, ?, ?, ?, ?)',
+            (action, content[:500], memory_id, status, entities)
         )
         db.commit()
         rowid = db.execute('SELECT last_insert_rowid()').fetchone()[0]
@@ -164,6 +170,13 @@ class StatsDB:
         """更新流记录的内容（如保存成功后替换为实际存储的事实）"""
         db = self._get_conn()
         db.execute('UPDATE stream SET content=? WHERE id=?', (content, rowid))
+        db.commit()
+        db.close()
+
+    def update_stream_entities(self, rowid, entities):
+        """更新流记录的实体标签"""
+        db = self._get_conn()
+        db.execute('UPDATE stream SET entities=? WHERE id=?', (entities, rowid))
         db.commit()
         db.close()
 
@@ -191,12 +204,12 @@ class StatsDB:
         db = self._get_conn()
         if action:
             rows = db.execute(
-                'SELECT id, action, content, memory_id, created_at, status FROM stream WHERE action=? ORDER BY id DESC LIMIT ?',
+                'SELECT id, action, content, memory_id, created_at, status, entities FROM stream WHERE action=? ORDER BY id DESC LIMIT ?',
                 (action, limit)
             ).fetchall()
         else:
             rows = db.execute(
-                'SELECT id, action, content, memory_id, created_at, status FROM stream ORDER BY id DESC LIMIT ?',
+                'SELECT id, action, content, memory_id, created_at, status, entities FROM stream ORDER BY id DESC LIMIT ?',
                 (limit,)
             ).fetchall()
         db.close()
@@ -208,14 +221,14 @@ class StatsDB:
         cutoff = f"{-days} days"
         if action:
             rows = db.execute(
-                "SELECT id, action, content, memory_id, created_at, status "
+                "SELECT id, action, content, memory_id, created_at, status, entities "
                 "FROM stream WHERE action=? AND created_at >= datetime('now','localtime',?) "
                 "ORDER BY id DESC",
                 (action, cutoff)
             ).fetchall()
         else:
             rows = db.execute(
-                "SELECT id, action, content, memory_id, created_at, status "
+                "SELECT id, action, content, memory_id, created_at, status, entities "
                 "FROM stream WHERE created_at >= datetime('now','localtime',?) "
                 "ORDER BY id DESC",
                 (cutoff,)
