@@ -178,7 +178,16 @@
       "Bash(pip show *)",
       "Bash(./venv312/Scripts/python.exe -m brain_mcp --help)",
       "mcp__brain__search_entity",
-      "mcp__brain__entity_lookup"
+      "mcp__brain__entity_lookup",
+      "Bash(npm install *.)",
+      "Bash(npm list *)",
+      "Bash(npm install *)",
+      "Bash(head -20 node_modules/3d-force-graph/dist/3d-force-graph.js)",
+      "Bash(head -20 node_modules/3d-force-graph/package.json)",
+      "Bash(npx vite *)",
+      "Bash(sed -i \"s/.linkColor\\(\\(\\) => 'rgba\\(120,180,255,0.4\\)'\\)/.linkColor\\('rgba\\(120,180,255,0.4\\)'\\)/\" src/views/MemoryView/GraphTab/GraphPanel.vue)",
+      "Bash(sed -i \"s/.linkDirectionalParticleColor\\(\\(\\) => '#8ED6FF'\\)/.linkDirectionalParticleColor\\('#8ED6FF'\\)/\" src/views/MemoryView/GraphTab/GraphPanel.vue)",
+      "Bash(node tests/graph-screenshot.js)"
     ]
   },
   "enableAllProjectMcpServers": true,

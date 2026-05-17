@@ -66,14 +66,26 @@ class GraphMemory:
         return cur.fetchall()
 
     def _init_default_entities(self):
-        """初始化默认根实体"""
+        """初始化默认根实体，并建立根实体之间的互连"""
+        names = []
         for name, etype in _DEFAULT_ENTITIES:
             self._exec(
                 "INSERT OR IGNORE INTO entity_nodes (name, type) VALUES (?, ?)",
                 (name, etype),
             )
+            names.append(name)
+        for i, a in enumerate(names):
+            for b in names[i + 1:]:
+                self._exec(
+                    "INSERT OR IGNORE INTO entity_relations (from_entity, to_entity) VALUES (?, ?)",
+                    (a, b),
+                )
+                self._exec(
+                    "INSERT OR IGNORE INTO entity_relations (from_entity, to_entity) VALUES (?, ?)",
+                    (b, a),
+                )
         self._conn.commit()
-        logger.info(f"[graph] default entities: {[e[0] for e in _DEFAULT_ENTITIES]}")
+        logger.info(f"[graph] default entities: {names} (fully interconnected)")
 
     # ── 公开 API ──────────────────────────────────────────────
 
@@ -382,6 +394,48 @@ class GraphMemory:
             "related_entities": related,
         }
 
+    def link_entities(self, entity_a: str, entity_b: str) -> dict:
+        """在两个已有实体之间建立双向连接（只连接，不创建新实体）
+
+        Returns:
+            success: 是否成功
+            error: 错误信息（如有）
+        """
+        a, b = entity_a.strip(), entity_b.strip()
+        if not a or not b:
+            return {"success": False, "error": "两个实体名都不能为空"}
+        if a == b:
+            return {"success": False, "error": "不能自己连接自己"}
+        try:
+            # 验证两个实体都存在
+            for name in [a, b]:
+                rows = self._exec("SELECT 1 FROM entity_nodes WHERE name = ?", (name,))
+                if not rows:
+                    return {"success": False, "error": f"实体「{name}」不存在"}
+            # 检查是否已连接
+            exist = self._exec(
+                "SELECT 1 FROM entity_relations WHERE from_entity = ? AND to_entity = ?",
+                (a, b),
+            )
+            if exist:
+                return {"success": False, "error": f"「{a}」和「{b}」已经连接"}
+            # 双向插入
+            self._exec(
+                "INSERT OR IGNORE INTO entity_relations (from_entity, to_entity) VALUES (?, ?)",
+                (a, b),
+            )
+            self._exec(
+                "INSERT OR IGNORE INTO entity_relations (from_entity, to_entity) VALUES (?, ?)",
+                (b, a),
+            )
+            self._conn.commit()
+            logger.info(f"[graph:link_entities] {a} ↔ {b}")
+            return {"success": True}
+        except Exception as e:
+            self._conn.rollback()
+            logger.warning(f"[graph:link_entities] failed: {e}")
+            return {"success": False, "error": str(e)}
+
     def delete_memory(self, mem0_id: str):
         """删除记忆节点及其边"""
         try:
@@ -407,6 +461,27 @@ class GraphMemory:
         except Exception as e:
             logger.warning(f"[graph] get_stats failed: {e}")
             return {"memory_count": 0, "entity_count": 0, "edge_count": 0}
+
+    def get_visualization_data(self) -> dict:
+        """返回图谱可视化所需的节点和边数据"""
+        try:
+            # 节点：实体 + 关联记忆数量
+            node_rows = self._exec(
+                """SELECT e.name, e.type, COUNT(mn.mem0_id) as memory_count
+                   FROM entity_nodes e
+                   LEFT JOIN mentions mn ON e.name = mn.entity_name
+                   GROUP BY e.name, e.type"""
+            )
+            nodes = [{"id": r[0], "label": r[0], "type": r[1], "memoryCount": r[2]} for r in node_rows]
+
+            # 边：实体关系
+            edge_rows = self._exec("SELECT from_entity, to_entity FROM entity_relations")
+            edges = [{"source": r[0], "target": r[1]} for r in edge_rows]
+
+            return {"nodes": nodes, "edges": edges}
+        except Exception as e:
+            logger.warning(f"[graph] get_visualization_data failed: {e}")
+            return {"nodes": [], "edges": []}
 
 
 def get_graph() -> GraphMemory | None:

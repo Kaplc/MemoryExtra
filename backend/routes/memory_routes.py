@@ -374,3 +374,34 @@ def register(app, ready_state, logger, stats_db):
         except Exception as e:
             logger.error(f"[memory/graph/entities] error: {e}")
             return jsonify({"error": str(e)})
+
+    @app.route('/memory/graph/visualization', methods=['POST'])
+    def graph_visualization():
+        """返回图谱可视化数据（节点+边）"""
+        try:
+            from modules.brain.graph import get_graph
+            graph = get_graph()
+            if not graph:
+                return jsonify({"error": "图数据库未初始化"})
+            data = graph.get_visualization_data()
+            return jsonify(data)
+        except Exception as e:
+            logger.error(f"[memory/graph/visualization] error: {e}")
+            return jsonify({"error": str(e), "nodes": [], "edges": []})
+
+    @app.route('/memory/graph/link', methods=['POST'])
+    def graph_link_entities():
+        """在两个已有实体之间建立双向连接"""
+        data = request.get_json() or {}
+        entity_a = (data.get('entity_a', '')).strip()
+        entity_b = (data.get('entity_b', '')).strip()
+        try:
+            from modules.brain.graph import get_graph
+            graph = get_graph()
+            if not graph:
+                return jsonify({"error": "图数据库未初始化"})
+            result = graph.link_entities(entity_a, entity_b)
+            return jsonify(result)
+        except Exception as e:
+            logger.error(f"[memory/graph/link] error: {e}")
+            return jsonify({"error": str(e)})

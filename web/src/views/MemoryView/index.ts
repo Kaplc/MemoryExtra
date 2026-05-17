@@ -9,23 +9,26 @@ import { SearchTab } from './SearchTab/SearchTab'
 import { StoreTab } from './StoreTab/StoreTab'
 import { OrganizeTab } from './OrganizeTab/OrganizeTab'
 import { MemorySettingsTab } from './SettingsTab/MemorySettingsTab'
+import { GraphTab } from './GraphTab/GraphTab'
 
 export class MemoryViewModel {
-  readonly currentTab = ref<'search' | 'store' | 'organize' | 'settings'>('search')
+  readonly currentTab = ref<'search' | 'store' | 'organize' | 'settings' | 'graph'>('search')
   readonly animatingCount = ref(0)
 
   readonly searchTab = new SearchTab()
   readonly storeTab = new StoreTab()
   readonly organizeTab = new OrganizeTab()
   readonly settingsTab = new MemorySettingsTab()
+  readonly graphTab = new GraphTab()
 
   /* switchTab：切换 Tab
    * 流程：更新 currentTab → 如果切换到 store Tab 则加载记忆列表 → 切换到 settings 则加载设置
    */
-  switchTab(tab: 'search' | 'store' | 'organize' | 'settings'): void {
+  switchTab(tab: 'search' | 'store' | 'organize' | 'settings' | 'graph'): void {
     this.currentTab.value = tab
     if (tab === 'store') this.storeTab.loadAll()
     if (tab === 'settings') this.settingsTab.load()
+    if (tab === 'graph') this.graphTab.loadGraph()
   }
 
   /* loadAll：加载所有数据（初始化时调用）
