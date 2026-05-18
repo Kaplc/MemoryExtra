@@ -25,13 +25,26 @@ export default defineConfig({
     screenshot: 'only-on-failure',
   },
   launchOptions: {
-    args: ['--proxy-bypass-list=127.0.0.1;localhost', '--proxy-server=direct://'],
+    args: [
+      '--proxy-bypass-list=127.0.0.1;localhost',
+      '--proxy-server=direct://',
+      '--use-gl=swiftshader',
+      '--enable-webgl',
+      '--ignore-gpu-blocklist',
+    ],
   },
   webServer: undefined as any,
   projects: [
     {
       name: 'chromium',
       use: { ...devices['Desktop Chrome'] },
+    },
+    {
+      name: 'chrome',
+      use: {
+        ...devices['Desktop Chrome'],
+        channel: 'chrome',
+      },
     },
   ],
 })
